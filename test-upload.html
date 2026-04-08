@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>测试上传</title>
+  <style>
+    body { font-family: sans-serif; max-width: 500px; margin: 60px auto; padding: 0 20px; }
+    h2 { margin-bottom: 24px; }
+    label { display: block; margin: 12px 0 4px; font-size: 13px; color: #555; }
+    input, select { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; box-sizing: border-box; }
+    button { margin-top: 20px; width: 100%; padding: 10px; background: #4f46e5; color: #fff; border: none; border-radius: 8px; font-size: 15px; cursor: pointer; }
+    button:hover { background: #4338ca; }
+    #result { margin-top: 16px; padding: 12px; border-radius: 8px; font-size: 13px; display: none; }
+    .ok  { background: #ecfdf5; color: #065f46; border: 1px solid #6ee7b7; }
+    .err { background: #fef2f2; color: #991b1b; border: 1px solid #fca5a5; }
+  </style>
+</head>
+<body>
+  <h2>📄 学生作业上传测试</h2>
+
+  <label>学生姓名</label>
+  <input id="name" value="张三" />
+
+  <label>作业类型</label>
+  <select id="type">
+    <option value="卡点练习题">卡点练习题</option>
+    <option value="卡点考试">卡点考试</option>
+    <option value="入学诊断">入学诊断</option>
+    <option value="整卷批改">整卷批改</option>
+  </select>
+
+  <label>卡点名称</label>
+  <input id="checkpoint" value="提炼转述" />
+
+  <label>优先级</label>
+  <select id="priority">
+    <option value="normal">普通</option>
+    <option value="urgent">紧急</option>
+    <option value="low">宽松</option>
+  </select>
+
+  <label>是否正常提交</label>
+  <select id="normal">
+    <option value="true">正常提交</option>
+    <option value="false">逾期/异常</option>
+  </select>
+
+  <label>选择 PDF 文件</label>
+  <input type="file" id="file" accept=".pdf" />
+
+  <button onclick="upload()">上传</button>
+  <div id="result"></div>
+
+  <script>
+    async function upload() {
+      const file = document.getElementById('file').files[0]
+      if (!file) { alert('请先选择 PDF 文件'); return }
+
+      const fd = new FormData()
+      fd.append('file', file)
+      fd.append('studentName',     document.getElementById('name').value)
+      fd.append('reviewType',      document.getElementById('type').value)
+      fd.append('checkpoint',      document.getElementById('checkpoint').value)
+      fd.append('priority',        document.getElementById('priority').value)
+      fd.append('submittedNormal', document.getElementById('normal').value)
+      fd.append('deadline',        '今日 23:59')
+
+      const res = document.getElementById('result')
+      res.style.display = 'none'
+
+      try {
+        const r = await fetch('http://localhost:3000/api/submissions', { method: 'POST', body: fd })
+        const json = await r.json()
+        res.style.display = 'block'
+        if (json.ok) {
+          res.className = 'ok'
+          res.textContent = `✓ 上传成功！ID: ${json.id}，提交时间: ${json.submittedAt}`
+        } else {
+          res.className = 'err'
+          res.textContent = '✗ 失败：' + (json.error || '未知错误')
+        }
+      } catch (e) {
+        res.style.display = 'block'
+        res.className = 'err'
+        res.textContent = '✗ 网络错误，请确认后端已启动（localhost:3000）'
+      }
+    }
+  </script>
+</body>
+</html>
