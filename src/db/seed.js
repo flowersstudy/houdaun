@@ -3,7 +3,7 @@ const path = require('path')
 const { execFileSync } = require('child_process')
 const mysql = require('mysql2/promise')
 const bcrypt = require('bcryptjs')
-require('dotenv').config()
+const { getDbConfig } = require('../config/env')
 
 const UPLOADS_DIR = path.join(__dirname, 'uploads')
 const SAMPLE_PDF_NAME = 'sample-seed.pdf'
@@ -383,7 +383,7 @@ async function seed() {
   })
 
   ensureSamplePdf()
-  const conn = await mysql.createConnection({ host: process.env.DB_HOST, port: process.env.DB_PORT, user: process.env.DB_USER, password: process.env.DB_PASSWORD, database: process.env.DB_NAME })
+  const conn = await mysql.createConnection(getDbConfig())
   console.log('????????????...')
   const passwordHash = await bcrypt.hash('123456', 10)
   const teacherIds = {}

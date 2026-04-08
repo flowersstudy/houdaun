@@ -62,3 +62,20 @@ npm start
 - `.env` 已加入 `.gitignore`，不要上传真实密钥
 - `uploads/` 和运行日志不会上传到 GitHub
 - 部署公网时，数据库连接需要改成公网数据库或云数据库配置
+
+## Railway 部署
+
+1. 将当前仓库连接到 Railway
+2. 新建一个 `MySQL` 数据库服务
+3. 在后端服务中配置：
+   - `JWT_SECRET`
+   - `JWT_EXPIRES_IN`
+   - `WX_APPID`
+   - `WX_SECRET`
+4. 数据库连接支持两种方式：
+   - 手动配置 `DB_HOST / DB_PORT / DB_USER / DB_PASSWORD / DB_NAME`
+   - 或直接引用 Railway MySQL 提供的 `MYSQLHOST / MYSQLPORT / MYSQLUSER / MYSQLPASSWORD / MYSQLDATABASE`
+5. 首次部署后执行：
+   - `npm run init-db`
+   - `npm run seed`
+6. 确认 `https://你的域名/health` 可访问

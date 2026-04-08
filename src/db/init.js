@@ -1,19 +1,17 @@
 const mysql = require('mysql2/promise')
-require('dotenv').config()
+const { getDbConfig, getDbName } = require('../config/env')
 
 async function init() {
   const conn = await mysql.createConnection({
-    host: process.env.DB_HOST,
-    port: process.env.DB_PORT,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
+    ...getDbConfig(false),
     multipleStatements: true,
   })
+  const dbName = getDbName()
 
   console.log('已连接 MySQL，开始初始化数据库...')
 
-  await conn.query('CREATE DATABASE IF NOT EXISTS student_teacher DEFAULT CHARACTER SET utf8mb4;')
-  await conn.query('USE student_teacher;')
+  await conn.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\` DEFAULT CHARACTER SET utf8mb4;`)
+  await conn.query(`USE \`${dbName}\`;`)
 
   const tables = `
     CREATE TABLE IF NOT EXISTS teachers (
