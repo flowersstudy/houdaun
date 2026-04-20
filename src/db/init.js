@@ -25,8 +25,10 @@ async function init() {
 
     CREATE TABLE IF NOT EXISTS students (
       id         INT AUTO_INCREMENT PRIMARY KEY,
-      openid     VARCHAR(100) NOT NULL UNIQUE,
+      openid     VARCHAR(100) UNIQUE,
+      account    VARCHAR(50) UNIQUE,
       phone      VARCHAR(20) UNIQUE,
+      password_hash VARCHAR(255),
       name       VARCHAR(50)  NOT NULL DEFAULT '新学员',
       status     ENUM('normal','abnormal','new','leave') DEFAULT 'new',
       created_at DATETIME DEFAULT NOW()
@@ -44,6 +46,15 @@ async function init() {
       avatar_url   VARCHAR(500),
       updated_at   DATETIME DEFAULT NOW() ON UPDATE NOW(),
       FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_avatar_presets (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      avatar_key  VARCHAR(50) NOT NULL UNIQUE,
+      label       VARCHAR(50) NOT NULL,
+      avatar_url  VARCHAR(500) NOT NULL,
+      sort_order  INT DEFAULT 0,
+      created_at  DATETIME DEFAULT NOW()
     );
 
     CREATE TABLE IF NOT EXISTS teacher_students (
@@ -186,6 +197,7 @@ async function init() {
       student_id    INT NOT NULL,
       course_id     INT,
       study_task_id INT,
+      point_name    VARCHAR(100),
       session_type  ENUM('lesson','video','practice','review','exam','other') DEFAULT 'other',
       status        ENUM('started','completed','aborted') DEFAULT 'completed',
       started_at    DATETIME NOT NULL,
@@ -194,6 +206,23 @@ async function init() {
       FOREIGN KEY (student_id) REFERENCES students(id),
       FOREIGN KEY (course_id) REFERENCES courses(id),
       FOREIGN KEY (study_task_id) REFERENCES study_tasks(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_learning_path_tasks (
+      id              INT AUTO_INCREMENT PRIMARY KEY,
+      student_id      INT NOT NULL,
+      point_name      VARCHAR(100) NOT NULL,
+      stage_key       VARCHAR(30) NOT NULL,
+      task_id         VARCHAR(100) NOT NULL,
+      is_done         TINYINT(1) DEFAULT 0,
+      meta_json       JSON,
+      updated_by_role ENUM('student','teacher') DEFAULT 'student',
+      updated_by_id   INT,
+      created_at      DATETIME DEFAULT NOW(),
+      updated_at      DATETIME DEFAULT NOW() ON UPDATE NOW(),
+      UNIQUE KEY uq_learning_path_task (student_id, point_name, stage_key, task_id),
+      KEY idx_learning_path_student_point (student_id, point_name),
+      FOREIGN KEY (student_id) REFERENCES students(id)
     );
 
     CREATE TABLE IF NOT EXISTS chat_rooms (
@@ -268,6 +297,30 @@ async function init() {
       FOREIGN KEY (review_id) REFERENCES reviews(id)
     );
 
+    CREATE TABLE IF NOT EXISTS review_point_scores (
+      id           INT AUTO_INCREMENT PRIMARY KEY,
+      student_id   INT NOT NULL,
+      point_name   VARCHAR(100) NOT NULL,
+      current_rate INT,
+      target_rate  INT,
+      source_type  ENUM('diagnosis','monthly_review') DEFAULT 'diagnosis',
+      sort_order   INT DEFAULT 0,
+      created_at   DATETIME DEFAULT NOW(),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS study_time_stats (
+      id           INT AUTO_INCREMENT PRIMARY KEY,
+      student_id   INT NOT NULL,
+      period_key   VARCHAR(50) NOT NULL,
+      period_label VARCHAR(50) NOT NULL,
+      hours        DECIMAL(10,2) DEFAULT 0,
+      cycle_type   ENUM('day','week','month') DEFAULT 'week',
+      sort_order   INT DEFAULT 0,
+      created_at   DATETIME DEFAULT NOW(),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
     CREATE TABLE IF NOT EXISTS outline_items (
       id         INT AUTO_INCREMENT PRIMARY KEY,
       student_id INT NOT NULL,
@@ -289,6 +342,36 @@ async function init() {
       created_at  DATETIME DEFAULT NOW()
     );
 
+    CREATE TABLE IF NOT EXISTS lesson_materials (
+      id                INT AUTO_INCREMENT PRIMARY KEY,
+      teacher_id        INT NOT NULL,
+      student_id        INT,
+      calendar_event_id INT NOT NULL,
+      material_type     ENUM('handout','replay') NOT NULL,
+      title             VARCHAR(255),
+      url               VARCHAR(500),
+      file_name         VARCHAR(255),
+      stored_file       VARCHAR(255),
+      created_at        DATETIME DEFAULT NOW(),
+      UNIQUE KEY uq_lesson_material (calendar_event_id, material_type),
+      FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS practice_assignment_tasks (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      teacher_id  INT NOT NULL,
+      student_id  INT NOT NULL,
+      checkpoint  VARCHAR(120),
+      detail      VARCHAR(255),
+      status      ENUM('pending','assigned') DEFAULT 'pending',
+      created_at  DATETIME DEFAULT NOW(),
+      assigned_at DATETIME,
+      FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+      FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
     CREATE TABLE IF NOT EXISTS pdf_submissions (
       id               VARCHAR(36) PRIMARY KEY,
       student_id       INT,
@@ -304,8 +387,36 @@ async function init() {
       score            INT,
       feedback         TEXT,
       graded_at        DATETIME,
+      reviewed_file_name   VARCHAR(255),
+      reviewed_stored_file VARCHAR(255),
+      point_name       VARCHAR(100),
+      stage_key        VARCHAR(50),
+      task_id          VARCHAR(100),
+      feedback_task_id VARCHAR(100),
       created_at       DATETIME DEFAULT NOW(),
       FOREIGN KEY (student_id) REFERENCES students(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS checkpoint_theory_library (
+      id                  INT AUTO_INCREMENT PRIMARY KEY,
+      checkpoint_name     VARCHAR(100) NOT NULL,
+      knowledge_point     VARCHAR(255) NOT NULL,
+      knowledge_type      ENUM('required','optional') DEFAULT 'required',
+      learning_status_raw VARCHAR(255),
+      province_tags_json  JSON,
+      course_status       VARCHAR(100),
+      theory_title        VARCHAR(255) NOT NULL,
+      video_id            VARCHAR(255),
+      pre_class_url       VARCHAR(500),
+      analysis_url        VARCHAR(500),
+      note_text           TEXT,
+      source_sheet        VARCHAR(100),
+      source_row          INT,
+      sort_order          INT DEFAULT 0,
+      created_at          DATETIME DEFAULT NOW(),
+      updated_at          DATETIME DEFAULT NOW() ON UPDATE NOW(),
+      KEY idx_checkpoint_theory_checkpoint (checkpoint_name),
+      KEY idx_checkpoint_theory_knowledge (checkpoint_name, knowledge_point)
     );
 
     CREATE TABLE IF NOT EXISTS orders (
@@ -344,6 +455,26 @@ async function init() {
       FOREIGN KEY (student_id) REFERENCES students(id)
     );
 
+
+    CREATE TABLE IF NOT EXISTS student_complaints (
+      id                    INT AUTO_INCREMENT PRIMARY KEY,
+      student_id            INT NOT NULL,
+      created_by_teacher_id INT NOT NULL,
+      demand                TEXT NOT NULL,
+      reason                TEXT NOT NULL,
+      suggestion            TEXT NOT NULL,
+      resolvers_json        TEXT,
+      deadline              DATE NOT NULL,
+      extra_note            TEXT,
+      attachments_json      LONGTEXT,
+      status                ENUM('pending','resolved') DEFAULT 'pending',
+      resolved_note         TEXT,
+      resolved_at           DATETIME,
+      created_at            DATETIME DEFAULT NOW(),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (created_by_teacher_id) REFERENCES teachers(id)
+    );
+
     CREATE TABLE IF NOT EXISTS leave_requests (
       id            INT AUTO_INCREMENT PRIMARY KEY,
       student_id    INT NOT NULL,
@@ -358,6 +489,44 @@ async function init() {
       reject_reason VARCHAR(255),
       approved_at   DATETIME,
       created_at    DATETIME DEFAULT NOW(),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (course_id) REFERENCES courses(id),
+      FOREIGN KEY (reviewed_by) REFERENCES teachers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_mailbox_messages (
+      id          INT AUTO_INCREMENT PRIMARY KEY,
+      student_id  INT NOT NULL,
+      category    VARCHAR(50) NOT NULL,
+      content     TEXT NOT NULL,
+      anonymous   TINYINT(1) DEFAULT 1,
+      status      ENUM('pending','read','replied','closed') DEFAULT 'pending',
+      replied_by  INT,
+      reply_text  TEXT,
+      replied_at  DATETIME,
+      created_at  DATETIME DEFAULT NOW(),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (replied_by) REFERENCES teachers(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS student_feedback_messages (
+      id               INT AUTO_INCREMENT PRIMARY KEY,
+      student_id       INT NOT NULL,
+      source           ENUM('recorded_lesson','find_teacher') NOT NULL,
+      title            VARCHAR(120),
+      point_name       VARCHAR(100),
+      course_id        INT,
+      content          TEXT,
+      attachments_json LONGTEXT,
+      meta_json        LONGTEXT,
+      status           ENUM('pending','read') DEFAULT 'pending',
+      reviewed_by      INT,
+      reviewed_at      DATETIME,
+      created_at       DATETIME DEFAULT NOW(),
+      updated_at       DATETIME DEFAULT NOW() ON UPDATE NOW(),
+      INDEX idx_feedback_student (student_id),
+      INDEX idx_feedback_status (status),
+      INDEX idx_feedback_created (created_at),
       FOREIGN KEY (student_id) REFERENCES students(id),
       FOREIGN KEY (course_id) REFERENCES courses(id),
       FOREIGN KEY (reviewed_by) REFERENCES teachers(id)
@@ -379,14 +548,25 @@ async function init() {
 
   const alters = [
     ['teachers', "ADD COLUMN title VARCHAR(100) AFTER password_hash"],
-    ['students', "ADD COLUMN phone VARCHAR(20) UNIQUE AFTER openid"],
+    ['students', 'MODIFY COLUMN openid VARCHAR(100) NULL'],
+    ['students', 'ADD COLUMN account VARCHAR(50) UNIQUE AFTER openid'],
+    ['students', "ADD COLUMN phone VARCHAR(20) UNIQUE AFTER account"],
+    ['students', 'ADD COLUMN password_hash VARCHAR(255) AFTER phone'],
     ['courses', 'ADD COLUMN price DECIMAL(10,2) DEFAULT 1080.00 AFTER description'],
     ['study_tasks', "MODIFY COLUMN type ENUM('video','practice','submit','review','exam','live','other') DEFAULT 'other'"],
+    ['study_sessions', 'ADD COLUMN point_name VARCHAR(100) AFTER study_task_id'],
+    ['study_time_stats', "MODIFY COLUMN cycle_type ENUM('day','week','month') DEFAULT 'week'"],
     ['leave_requests', 'ADD COLUMN reviewed_by INT AFTER status'],
     ['leave_requests', 'ADD COLUMN reject_reason VARCHAR(255) AFTER reviewed_by'],
     ['pdf_submissions', 'ADD COLUMN score INT AFTER graded'],
     ['pdf_submissions', 'ADD COLUMN feedback TEXT AFTER score'],
     ['pdf_submissions', 'ADD COLUMN graded_at DATETIME AFTER feedback'],
+    ['pdf_submissions', 'ADD COLUMN reviewed_file_name VARCHAR(255) AFTER graded_at'],
+    ['pdf_submissions', 'ADD COLUMN reviewed_stored_file VARCHAR(255) AFTER reviewed_file_name'],
+    ['pdf_submissions', 'ADD COLUMN point_name VARCHAR(100) AFTER graded_at'],
+    ['pdf_submissions', 'ADD COLUMN stage_key VARCHAR(50) AFTER point_name'],
+    ['pdf_submissions', 'ADD COLUMN task_id VARCHAR(100) AFTER stage_key'],
+    ['pdf_submissions', 'ADD COLUMN feedback_task_id VARCHAR(100) AFTER task_id'],
     ['student_flags', 'ADD COLUMN reason VARCHAR(100) AFTER flagged'],
     ['student_flags', "ADD COLUMN severity ENUM('high','medium','low') DEFAULT 'medium' AFTER reason"],
     ['calendar_events', 'ADD CONSTRAINT fk_ce_student FOREIGN KEY (student_id) REFERENCES students(id)'],

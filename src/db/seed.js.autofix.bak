@@ -54,16 +54,6 @@ const teachers = [
   { key: 'liu', name: '鍒樿€佸笀', email: 'liu@test.com', title: '鏍￠暱鑰佸笀' },
 ]
 
-const studentAvatarPresets = Array.from({ length: 10 }, (_, index) => {
-  const avatarKey = `avatar-${String(index + 1).padStart(2, '0')}`
-  return {
-    avatar_key: avatarKey,
-    label: `头像 ${index + 1}`,
-    avatar_url: `/assets/avatars/${avatarKey}.png`,
-    sort_order: index + 1,
-  }
-})
-
 const courseCatalog = [
   { name: '??????', subject: '??', description: '????????????????', price: 1080 },
   { name: '??????', subject: '??', description: '????????????????', price: 1080 },
@@ -130,7 +120,7 @@ const courseStudyBlueprints = {
           {
             resource_type: 'pdf',
             phase: 'post',
-            title: '浣滀笟瑙ｆ瀽锛氭壘鐐逛笉鍏ㄩ潰锛堜綔涓氳瑙ｈ锛?',
+            title: '浣滀笟瑙ｆ瀽锛氭壘鐐逛笉鍏ㄩ潰锛堜綔涓氳瑙ｈ锛?,
             url: 'http://img.yaotia.com/2025/04-27/1745725412821.pdf',
             video_id: null,
           },
@@ -141,8 +131,8 @@ const courseStudyBlueprints = {
       day: 3,
       status: 'in_progress',
       tasks: [{
-        name: '[閫夊] 鈥滄纭殑鐢宠闃呰瑙勫垯鎰忚瘑鈥?',
-        description: '鐞嗚璇撅細銆愬熀纭€鐗堛€戞帉鎻℃纭殑闃呰璁ょ煡銆愯鐐圭殑鏋勬垚銆佽瘎鍒嗘爣鍑嗐€侀槄璇讳範鎯€戯綔瀛﹀憳鍩虹锛氳ˉ寮憋綔閫傜敤鐪佷唤锛氭墍鏈夌渷浠斤綔璧勬簮鐘舵€侊細寰呰ˉ鍏?',
+        name: '[閫夊] 鈥滄纭殑鐢宠闃呰瑙勫垯鎰忚瘑鈥?,
+        description: '鐞嗚璇撅細銆愬熀纭€鐗堛€戞帉鎻℃纭殑闃呰璁ょ煡銆愯鐐圭殑鏋勬垚銆佽瘎鍒嗘爣鍑嗐€侀槄璇讳範鎯€戯綔瀛﹀憳鍩虹锛氳ˉ寮憋綔閫傜敤鐪佷唤锛氭墍鏈夌渷浠斤綔璧勬簮鐘舵€侊細寰呰ˉ鍏?,
         type: 'video',
         duration: 25,
         completed: 0,
@@ -153,8 +143,8 @@ const courseStudyBlueprints = {
       day: 4,
       status: 'pending',
       tasks: [{
-        name: '[閫夊] 鈥滄纭殑鐢宠闃呰瑙勫垯鎰忚瘑鈥?路 鐪佷唤鐗?',
-        description: '鐞嗚璇撅細銆愮渷浠界増銆戝鍒欐潗鏂欓槄璇绘€濊矾锝滈€傜敤鐪佷唤锛氬寳浜€佹睙鑻忥綔璧勬簮鐘舵€侊細寰呰ˉ鍏?',
+        name: '[閫夊] 鈥滄纭殑鐢宠闃呰瑙勫垯鎰忚瘑鈥?路 鐪佷唤鐗?,
+        description: '鐞嗚璇撅細銆愮渷浠界増銆戝鍒欐潗鏂欓槄璇绘€濊矾锝滈€傜敤鐪佷唤锛氬寳浜€佹睙鑻忥綔璧勬簮鐘舵€侊細寰呰ˉ鍏?,
         type: 'video',
         duration: 25,
         completed: 0,
@@ -177,7 +167,7 @@ const courseStudyBlueprints = {
       day: 6,
       status: 'pending',
       tasks: [{
-        name: '[浼樺厛鍕鹃€塢 鍒烽浜?',
+        name: '[浼樺厛鍕鹃€塢 鍒烽浜?,
         description: '鍗＄偣锛氳鐐逛笉鍏ㄤ笉鍑嗭綔鍒烽浠诲姟',
         type: 'practice',
         duration: 30,
@@ -189,7 +179,7 @@ const courseStudyBlueprints = {
       day: 7,
       status: 'pending',
       tasks: [{
-        name: '[浼樺厛鍕鹃€塢 鍒烽涓?',
+        name: '[浼樺厛鍕鹃€塢 鍒烽涓?,
         description: '鍗＄偣锛氳鐐逛笉鍏ㄤ笉鍑嗭綔鍒烽浠诲姟',
         type: 'practice',
         duration: 30,
@@ -201,7 +191,7 @@ const courseStudyBlueprints = {
       day: 8,
       status: 'pending',
       tasks: [{
-        name: '[浼樺厛鍕鹃€塢 鍒烽鍥?',
+        name: '[浼樺厛鍕鹃€塢 鍒烽鍥?,
         description: '鍗＄偣锛氳鐐逛笉鍏ㄤ笉鍑嗭綔鍒烽浠诲姟',
         type: 'practice',
         duration: 30,
@@ -237,7 +227,7 @@ const courseStudyBlueprints = {
       day: 11,
       status: 'pending',
       tasks: [{
-        name: '[鎵嬪姩鍕鹃€塢 鍒烽x锛堢浜屽锛?',
+        name: '[鎵嬪姩鍕鹃€塢 鍒烽x锛堢浜屽锛?,
         description: '鏇挎崲棰?/ 琛ヨ€冮',
         type: 'practice',
         duration: 30,
@@ -267,7 +257,7 @@ const students = [
     phone: '13800000001',
     name: '寮犳櫒',
     status: 'normal',
-    grade: '2026灞?',
+    grade: '2026灞?,
     subject: '鐢宠',
     coachKey: 'li',
     diagnosisKey: 'wang',
@@ -277,7 +267,7 @@ const students = [
     profile: {
       gender: 'male',
       hometown: '鏉窞',
-      exam_status: '鍑嗗棣栬€?',
+      exam_status: '鍑嗗棣栬€?,
       exam_date: dateOffset(12),
       education: '楂樹腑',
       major: '鐞嗙鏂瑰悜',
@@ -285,19 +275,19 @@ const students = [
     },
     course: { name: '瑕佺偣涓嶅叏涓嶅噯', progress: 43, status: 'in_progress' },
     noteTexts: [
-      '鍗曡瘝鍩虹杩樺彲浠ワ紝浣嗛槄璇诲畾浣嶉€熷害鍋忔參锛岄渶瑕佺户缁仛闄愭椂璁粌銆?',
-      '杩欏懆璇惧爞鐘舵€佺ǔ瀹氾紝寤鸿鍛ㄦ湯琛ュ仛涓€濂楃湡棰橀槄璇诲苟鎷嶇収鎻愪氦銆?',
+      '鍗曡瘝鍩虹杩樺彲浠ワ紝浣嗛槄璇诲畾浣嶉€熷害鍋忔參锛岄渶瑕佺户缁仛闄愭椂璁粌銆?,
+      '杩欏懆璇惧爞鐘舵€佺ǔ瀹氾紝寤鸿鍛ㄦ湯琛ュ仛涓€濂楃湡棰橀槄璇诲苟鎷嶇収鎻愪氦銆?,
     ],
     flag: null,
     diagnosis: {
-      target_exam: '鍥借€冪敵璁?',
+      target_exam: '鍥借€冪敵璁?,
       target_score: 130,
       diagnosis_score: 108,
       diagnosis_date: dateOffset(-3),
-      teacher_comment: '鍩虹杈冪ǔ锛岀煭鏈熼噸鐐规彁鍗囬槄璇婚€熷害鍜屼綔鏂囪〃杈俱€?',
+      teacher_comment: '鍩虹杈冪ǔ锛岀煭鏈熼噸鐐规彁鍗囬槄璇婚€熷害鍜屼綔鏂囪〃杈俱€?,
       points: [
-        { point_name: '瑕佺偣涓嶅叏涓嶅噯', priority: 'high', description: '娈佃惤瀹氫綅涓嶅绋冲畾锛屽鏄撳洖鐪嬨€?', sort_order: 1 },
-        { point_name: '浣滄枃琛ㄨ揪涓嶇晠', priority: 'medium', description: '鍙ュ紡杈冨崟涓€锛岄渶瑕佸噯澶囨ā鏉裤€?', sort_order: 2 },
+        { point_name: '瑕佺偣涓嶅叏涓嶅噯', priority: 'high', description: '娈佃惤瀹氫綅涓嶅绋冲畾锛屽鏄撳洖鐪嬨€?, sort_order: 1 },
+        { point_name: '浣滄枃琛ㄨ揪涓嶇晠', priority: 'medium', description: '鍙ュ紡杈冨崟涓€锛岄渶瑕佸噯澶囨ā鏉裤€?, sort_order: 2 },
       ],
     },
     replayTitle: '鎵剧偣涓嶅叏闈紙浣滀笟璁茶В璇撅級',
@@ -305,17 +295,17 @@ const students = [
     answerScore: 12,
     calendar: [
       { title: '寮犳櫒 鑻辫姝ｈ', date: dateOffset(0), start: '09:00', end: '10:30', type: 'class', link: null },
-      { title: '寮犳櫒 闃呰澶嶇洏璇?', date: dateOffset(-1), start: '19:30', end: '20:30', type: 'class', link: 'https://meeting.example.com/teacher-li-1' },
+      { title: '寮犳櫒 闃呰澶嶇洏璇?, date: dateOffset(-1), start: '19:30', end: '20:30', type: 'class', link: 'https://meeting.example.com/teacher-li-1' },
     ],
     chatMessages: [
-      ['teacher', '鏉庤€佸笀', '浠婂ぉ璇惧爞鍙嶉宸茬粡鍙戜綘浜嗭紝鏅氱偣璁板緱鐪嬩竴涓嬨€?'],
-      ['student', '寮犳櫒', '鏀跺埌鑰佸笀锛屾垜鏅氳嚜涔犲悗灏卞紑濮嬫敼銆?'],
-      ['teacher', '鏉庤€佸笀', '鏀瑰畬鎶?PDF 鎻愪氦涓婃潵锛屾垜鏄庢棭缁欎綘鎵广€?'],
+      ['teacher', '鏉庤€佸笀', '浠婂ぉ璇惧爞鍙嶉宸茬粡鍙戜綘浜嗭紝鏅氱偣璁板緱鐪嬩竴涓嬨€?],
+      ['student', '寮犳櫒', '鏀跺埌鑰佸笀锛屾垜鏅氳嚜涔犲悗灏卞紑濮嬫敼銆?],
+      ['teacher', '鏉庤€佸笀', '鏀瑰畬鎶?PDF 鎻愪氦涓婃潵锛屾垜鏄庢棭缁欎綘鎵广€?],
     ],
     submissions: [
       {
         id: 'pdf_s1_1',
-        reviewType: '鍗＄偣缁冧範棰?',
+        reviewType: '鍗＄偣缁冧範棰?,
         checkpoint: '瑕佺偣涓嶅叏涓嶅噯 路 鍒烽涓€',
         deadline: dateTimeOffset(1, '12:00:00'),
         priority: 'normal',
@@ -323,7 +313,7 @@ const students = [
         fileName: '寮犳櫒-瑕佺偣涓嶅叏涓嶅噯-鍒烽涓€.pdf',
         graded: 1,
         score: 12,
-        feedback: '瀹氫綅鎬濊矾姝ｇ‘锛岄敊鍦ㄧ粏鑺傝瘝锛屽缓璁户缁檺鏃剁粌涔犮€?',
+        feedback: '瀹氫綅鎬濊矾姝ｇ‘锛岄敊鍦ㄧ粏鑺傝瘝锛屽缓璁户缁檺鏃剁粌涔犮€?,
         gradedAt: dateTimeOffset(-1, '21:00:00'),
         createdAt: dateTimeOffset(-1, '09:30:00'),
       },
@@ -331,14 +321,14 @@ const students = [
     notification: {
       type: 'class',
       title: '鏄庢棩涓婅鎻愰啋',
-      content: '鏄庡ぉ 09:00 鏈夎嫳璇璇撅紝璇锋彁鍓嶅噯澶囧ソ璁蹭箟銆?',
+      content: '鏄庡ぉ 09:00 鏈夎嫳璇璇撅紝璇锋彁鍓嶅噯澶囧ソ璁蹭箟銆?,
       related_type: 'calendar_event',
       related_id: 'seed_calendar_s1_1',
       scheduled_at: dateTimeOffset(0, '20:00:00'),
     },
     outlineItems: [
-      { type: 'listen', content: '鍥炲惉鈥滄壘鐐逛笉鍏ㄩ潰锛堢悊璁烘柟娉曡瑙ｏ級鈥濅笌鈥滀綔涓氳瑙ｈ鈥濄€?', sort_order: 1 },
-      { type: 'write', content: '瀹屾垚鈥滃埛棰樹竴鈥濆苟鏁寸悊閿欏洜銆?', sort_order: 2 },
+      { type: 'listen', content: '鍥炲惉鈥滄壘鐐逛笉鍏ㄩ潰锛堢悊璁烘柟娉曡瑙ｏ級鈥濅笌鈥滀綔涓氳瑙ｈ鈥濄€?, sort_order: 1 },
+      { type: 'write', content: '瀹屾垚鈥滃埛棰樹竴鈥濆苟鏁寸悊閿欏洜銆?, sort_order: 2 },
     ],
   },
   {
@@ -347,7 +337,7 @@ const students = [
     phone: '13800000002',
     name: '鏉庢偊',
     status: 'new',
-    grade: '2026灞?',
+    grade: '2026灞?,
     subject: '鐢宠',
     coachKey: 'li',
     diagnosisKey: 'wang',
@@ -357,7 +347,7 @@ const students = [
     profile: {
       gender: 'female',
       hometown: '瀹佹尝',
-      exam_status: '鏂板叆鐝?',
+      exam_status: '鏂板叆鐝?,
       exam_date: dateOffset(12),
       education: '楂樹腑',
       major: '鏂囩鏂瑰悜',
@@ -365,38 +355,38 @@ const students = [
     },
     course: { name: '鎻愮偧杞堪鍥伴毦', progress: 18, status: 'in_progress' },
     noteTexts: [
-      '鏂扮敓锛岄槄璇诲熀纭€杈冨急锛屽厛浠庢钀藉ぇ鎰忛鍜屼富鏃ㄩ鍏ユ墜銆?',
-      '鍙嶉姣旇緝绉瀬锛屼絾鍋氶閫熷害鎱紝寤鸿鍏堜繚鍑嗙‘鐜囥€?',
+      '鏂扮敓锛岄槄璇诲熀纭€杈冨急锛屽厛浠庢钀藉ぇ鎰忛鍜屼富鏃ㄩ鍏ユ墜銆?,
+      '鍙嶉姣旇緝绉瀬锛屼絾鍋氶閫熷害鎱紝寤鸿鍏堜繚鍑嗙‘鐜囥€?,
     ],
     flag: null,
     diagnosis: {
-      target_exam: '鍥借€冪敵璁?',
+      target_exam: '鍥借€冪敵璁?,
       target_score: 125,
       diagnosis_score: 96,
       diagnosis_date: dateOffset(-4),
-      teacher_comment: '閫傚悎浣滀负鏂扮敓鏍蜂緥锛岄噸鐐圭洴鍩虹闃呰鍜屽崟璇嶃€?',
+      teacher_comment: '閫傚悎浣滀负鏂扮敓鏍蜂緥锛岄噸鐐圭洴鍩虹闃呰鍜屽崟璇嶃€?,
       points: [
-        { point_name: '鎻愮偧杞堪鍥伴毦', priority: 'high', description: '鎶撲腑蹇冨彞鑳藉姏杈冨急銆?', sort_order: 1 },
-        { point_name: '鍒嗘瀽缁撴瀯涓嶆竻', priority: 'medium', description: '楂橀璇嶄笉鐔燂紝褰卞搷闃呰閫熷害銆?', sort_order: 2 },
+        { point_name: '鎻愮偧杞堪鍥伴毦', priority: 'high', description: '鎶撲腑蹇冨彞鑳藉姏杈冨急銆?, sort_order: 1 },
+        { point_name: '鍒嗘瀽缁撴瀯涓嶆竻', priority: 'medium', description: '楂橀璇嶄笉鐔燂紝褰卞搷闃呰閫熷害銆?, sort_order: 2 },
       ],
     },
     replayTitle: '闃呰绮剧粌鐝瀛﹁',
     answerTitle: '涓绘棬棰樹笓椤逛竴',
     answerScore: 14,
     calendar: [
-      { title: '鏉庢偊 鍏ョ彮璇婃柇璇?', date: dateOffset(1), start: '14:00', end: '15:30', type: 'class', link: null },
-      { title: '鏉庢偊 闃呰绮剧粌璇?', date: dateOffset(-2), start: '20:00', end: '21:00', type: 'class', link: 'https://meeting.example.com/teacher-li-2' },
+      { title: '鏉庢偊 鍏ョ彮璇婃柇璇?, date: dateOffset(1), start: '14:00', end: '15:30', type: 'class', link: null },
+      { title: '鏉庢偊 闃呰绮剧粌璇?, date: dateOffset(-2), start: '20:00', end: '21:00', type: 'class', link: 'https://meeting.example.com/teacher-li-2' },
     ],
     chatMessages: [
-      ['student', '鏉庢偊', '鑰佸笀鎴戝垰鎶婇槄璇讳綔涓氭暣鐞嗗ソ浜嗐€?'],
-      ['teacher', '鏉庤€佸笀', '濂界殑锛屾垜鐪嬪埌鍚庝細浼樺厛甯綘鎵规敼銆?'],
-      ['student', '鏉庢偊', '璋㈣阿鑰佸笀锛屾垜涔熸兂鐭ラ亾鑷繁涓绘棬棰樹负浠€涔堣€侀敊銆?'],
+      ['student', '鏉庢偊', '鑰佸笀鎴戝垰鎶婇槄璇讳綔涓氭暣鐞嗗ソ浜嗐€?],
+      ['teacher', '鏉庤€佸笀', '濂界殑锛屾垜鐪嬪埌鍚庝細浼樺厛甯綘鎵规敼銆?],
+      ['student', '鏉庢偊', '璋㈣阿鑰佸笀锛屾垜涔熸兂鐭ラ亾鑷繁涓绘棬棰樹负浠€涔堣€侀敊銆?],
     ],
     submissions: [
       {
         id: 'pdf_s2_1',
-        reviewType: '鍗＄偣缁冧範棰?',
-        checkpoint: '鎻愮偧杞堪鍥伴毦 绗?2 璁?',
+        reviewType: '鍗＄偣缁冧範棰?,
+        checkpoint: '鎻愮偧杞堪鍥伴毦 绗?2 璁?,
         deadline: dateTimeOffset(0, '12:00:00'),
         priority: 'urgent',
         submittedNormal: 1,
@@ -411,20 +401,20 @@ const students = [
     notification: {
       type: 'review',
       title: '鏂颁綔涓氬緟鎵规敼',
-      content: '鏉庢偊宸叉彁浜や富鏃ㄩ涓撻」浣滀笟锛岃鍙婃椂鎵规敼銆?',
+      content: '鏉庢偊宸叉彁浜や富鏃ㄩ涓撻」浣滀笟锛岃鍙婃椂鎵规敼銆?,
       related_type: 'submission',
       related_id: 'pdf_s2_1',
       scheduled_at: dateTimeOffset(0, '08:40:00'),
     },
     outlineItems: [
-      { type: 'listen', content: '鍥炵湅瀵煎璇句腑涓绘棬棰樺垽鏂柟娉曘€?', sort_order: 1 },
-      { type: 'write', content: '鏁寸悊 10 涓珮棰戜富鏃ㄩ淇″彿璇嶃€?', sort_order: 2 },
+      { type: 'listen', content: '鍥炵湅瀵煎璇句腑涓绘棬棰樺垽鏂柟娉曘€?, sort_order: 1 },
+      { type: 'write', content: '鏁寸悊 10 涓珮棰戜富鏃ㄩ淇″彿璇嶃€?, sort_order: 2 },
     ],
     leaveRequest: {
       pointName: '鎻愮偧杞堪鍥伴毦',
-      stepName: '绗?2 璁?',
+      stepName: '绗?2 璁?,
       days: 1,
-      reason: '瀛︾敓涓存椂鍙傚姞鏍″唴鑰冭瘯锛岀敵璇烽『寤朵竴澶╀笂璇俱€?',
+      reason: '瀛︾敓涓存椂鍙傚姞鏍″唴鑰冭瘯锛岀敵璇烽『寤朵竴澶╀笂璇俱€?,
       status: 'pending',
     },
   },
@@ -434,7 +424,7 @@ const students = [
     phone: '13800000003',
     name: '鐜嬫旦',
     status: 'normal',
-    grade: '2026灞?',
+    grade: '2026灞?,
     subject: '鐢宠',
     coachKey: 'li',
     diagnosisKey: 'wang',
@@ -452,38 +442,38 @@ const students = [
     },
     course: { name: '瀵圭瓥鎺ㄥ鍥伴毦', progress: 32, status: 'in_progress' },
     noteTexts: [
-      '鍘嬭酱棰橀亣鍒伴€掓帹鍏崇郴鏃跺鏄撳崱浣忥紝闇€瑕佸厛瀛︿細鎷嗘潯浠躲€?',
-      '鏈€杩戞彁浜や綔涓氫笉绋冲畾锛屽缓璁妸鏅氶棿澶嶇洏鏃堕棿鍥哄畾涓嬫潵銆?',
+      '鍘嬭酱棰橀亣鍒伴€掓帹鍏崇郴鏃跺鏄撳崱浣忥紝闇€瑕佸厛瀛︿細鎷嗘潯浠躲€?,
+      '鏈€杩戞彁浜や綔涓氫笉绋冲畾锛屽缓璁妸鏅氶棿澶嶇洏鏃堕棿鍥哄畾涓嬫潵銆?,
     ],
-    flag: { flagged: 1, reason: '杩炵画涓ゆ浣滀笟寤舵湡锛屼笖鏈€杩戣鍫傜姸鎬佹尝鍔ㄨ緝澶с€?', severity: 'high' },
+    flag: { flagged: 1, reason: '杩炵画涓ゆ浣滀笟寤舵湡锛屼笖鏈€杩戣鍫傜姸鎬佹尝鍔ㄨ緝澶с€?, severity: 'high' },
     diagnosis: {
-      target_exam: '鍥借€冪敵璁?',
+      target_exam: '鍥借€冪敵璁?,
       target_score: 128,
       diagnosis_score: 92,
       diagnosis_date: dateOffset(-3),
-      teacher_comment: '灞炰簬闇€瑕侀噸鐐硅窡杩涚殑寮傚父瀛︾敓锛屽厛绋充綇浣滀笟鎻愪氦鑺傚銆?',
+      teacher_comment: '灞炰簬闇€瑕侀噸鐐硅窡杩涚殑寮傚父瀛︾敓锛屽厛绋充綇浣滀笟鎻愪氦鑺傚銆?,
       points: [
-        { point_name: '瀵圭瓥鎺ㄥ鍥伴毦', priority: 'high', description: '鍘嬭酱棰樻媶鍒嗘€濊矾涓嶆竻鏅般€?', sort_order: 1 },
-        { point_name: '鍒嗘瀽缁撴瀯涓嶆竻', priority: 'medium', description: '鍒嗙被璁ㄨ瀹规槗婕忔儏鍐点€?', sort_order: 2 },
+        { point_name: '瀵圭瓥鎺ㄥ鍥伴毦', priority: 'high', description: '鍘嬭酱棰樻媶鍒嗘€濊矾涓嶆竻鏅般€?, sort_order: 1 },
+        { point_name: '鍒嗘瀽缁撴瀯涓嶆竻', priority: 'medium', description: '鍒嗙被璁ㄨ瀹规槗婕忔儏鍐点€?, sort_order: 2 },
       ],
     },
-    replayTitle: '鏁板垪鍘嬭酱棰樿璇?',
+    replayTitle: '鏁板垪鍘嬭酱棰樿璇?,
     answerTitle: '鏁板垪缁煎悎璁粌涓€',
     answerScore: 10,
     calendar: [
-      { title: '鐜嬫旦 鏁板鍘嬭酱璇?', date: dateOffset(0), start: '16:00', end: '17:00', type: 'class', link: null },
-      { title: '鐜嬫旦 鏁板垪璁茶瘎璇?', date: dateOffset(-1), start: '10:00', end: '11:00', type: 'class', link: null },
+      { title: '鐜嬫旦 鏁板鍘嬭酱璇?, date: dateOffset(0), start: '16:00', end: '17:00', type: 'class', link: null },
+      { title: '鐜嬫旦 鏁板垪璁茶瘎璇?, date: dateOffset(-1), start: '10:00', end: '11:00', type: 'class', link: null },
     ],
     chatMessages: [
-      ['student', '鐜嬫旦', '鑰佸笀锛屾垜杩欐鍘嬭酱棰樿繕鏄病鍋氬嚭鏉ャ€?'],
-      ['teacher', '鏉庤€佸笀', '鍏堟妸宸茬煡鏉′欢鐢绘垚缁撴瀯鍥撅紝鍐嶆寜姝ラ鎷嗐€?'],
-      ['student', '鐜嬫旦', '濂界殑锛屾垜浠婃櫄鎸変綘璇寸殑閲嶆柊鍐欎竴鐗堛€?'],
+      ['student', '鐜嬫旦', '鑰佸笀锛屾垜杩欐鍘嬭酱棰樿繕鏄病鍋氬嚭鏉ャ€?],
+      ['teacher', '鏉庤€佸笀', '鍏堟妸宸茬煡鏉′欢鐢绘垚缁撴瀯鍥撅紝鍐嶆寜姝ラ鎷嗐€?],
+      ['student', '鐜嬫旦', '濂界殑锛屾垜浠婃櫄鎸変綘璇寸殑閲嶆柊鍐欎竴鐗堛€?],
     ],
     submissions: [
       {
         id: 'pdf_s3_1',
-        reviewType: '鍗＄偣缁冧範棰?',
-        checkpoint: '瀵圭瓥鎺ㄥ鍥伴毦 绗?3 璁?',
+        reviewType: '鍗＄偣缁冧範棰?,
+        checkpoint: '瀵圭瓥鎺ㄥ鍥伴毦 绗?3 璁?,
         deadline: dateTimeOffset(0, '10:00:00'),
         priority: 'urgent',
         submittedNormal: 0,
@@ -498,14 +488,14 @@ const students = [
     notification: {
       type: 'system',
       title: '寮傚父瀛﹀憳鎻愰啋',
-      content: '鐜嬫旦宸茶鏍囪涓洪噸鐐硅窡杩涳紝璇峰敖蹇畬鎴愭矡閫氫笌鎵规敼銆?',
+      content: '鐜嬫旦宸茶鏍囪涓洪噸鐐硅窡杩涳紝璇峰敖蹇畬鎴愭矡閫氫笌鎵规敼銆?,
       related_type: 'student_flag',
       related_id: 's3',
       scheduled_at: dateTimeOffset(0, '09:00:00'),
     },
     outlineItems: [
-      { type: 'listen', content: '鍥炵湅鏁板垪鍘嬭酱棰樻潯浠舵媶鍒嗙ず渚嬨€?', sort_order: 1 },
-      { type: 'write', content: '瀹屾垚鏁板垪缁煎悎璁粌绗?2 濂楀苟鎻愪氦銆?', sort_order: 2 },
+      { type: 'listen', content: '鍥炵湅鏁板垪鍘嬭酱棰樻潯浠舵媶鍒嗙ず渚嬨€?, sort_order: 1 },
+      { type: 'write', content: '瀹屾垚鏁板垪缁煎悎璁粌绗?2 濂楀苟鎻愪氦銆?, sort_order: 2 },
     ],
     assignmentTask: {
       checkpoint: '鏁板垪缁煎悎',
@@ -518,7 +508,7 @@ const students = [
     phone: '13800000004',
     name: '闄堥洩',
     status: 'normal',
-    grade: '2026灞?',
+    grade: '2026灞?,
     subject: '鐢宠',
     coachKey: 'li',
     diagnosisKey: 'wang',
@@ -528,7 +518,7 @@ const students = [
     profile: {
       gender: 'female',
       hometown: '鍢夊叴',
-      exam_status: '姝ｅ父瀛︿範涓?',
+      exam_status: '姝ｅ父瀛︿範涓?,
       exam_date: dateOffset(26),
       education: '楂樹腑',
       major: '鏂囩鏂瑰悜',
@@ -536,44 +526,44 @@ const students = [
     },
     course: { name: '浣滄枃绔嬫剰涓嶅噯', progress: 24, status: 'in_progress' },
     noteTexts: [
-      '浣滄枃瀹￠鍩烘湰鍑嗙‘锛屼絾缁撴瀯灞曞紑浠嶇劧鍋忕煭銆?',
-      '鏈懆璇惧爞浜掑姩寰堝ソ锛屽彲浠ラ€愭澧炲姞闄愭椂鍐欎綔棰戠巼銆?',
+      '浣滄枃瀹￠鍩烘湰鍑嗙‘锛屼絾缁撴瀯灞曞紑浠嶇劧鍋忕煭銆?,
+      '鏈懆璇惧爞浜掑姩寰堝ソ锛屽彲浠ラ€愭澧炲姞闄愭椂鍐欎綔棰戠巼銆?,
     ],
     flag: null,
     diagnosis: {
-      target_exam: '鍥借€冪敵璁?',
+      target_exam: '鍥借€冪敵璁?,
       target_score: 126,
       diagnosis_score: 101,
       diagnosis_date: dateOffset(-6),
-      teacher_comment: '閫傚悎浣滀负绋冲畾瀛︿範涓殑姝ｅ父鏍蜂緥銆?',
+      teacher_comment: '閫傚悎浣滀负绋冲畾瀛︿範涓殑姝ｅ父鏍蜂緥銆?,
       points: [
-        { point_name: '浣滄枃璁鸿瘉涓嶆竻', priority: 'high', description: '鍒嗚鐐瑰睍寮€涓嶅鍏呭垎銆?', sort_order: 1 },
+        { point_name: '浣滄枃璁鸿瘉涓嶆竻', priority: 'high', description: '鍒嗚鐐瑰睍寮€涓嶅鍏呭垎銆?, sort_order: 1 },
       ],
     },
-    replayTitle: '浣滄枃缁撴瀯璇惧洖鏀?',
+    replayTitle: '浣滄枃缁撴瀯璇惧洖鏀?,
     answerTitle: '闄愭椂浣滄枃璁粌涓€',
     answerScore: 11,
     calendar: [
       { title: '闄堥洩 鍐欎綔姝ｈ', date: dateOffset(2), start: '13:30', end: '14:30', type: 'class', link: 'https://meeting.example.com/teacher-li-3' },
-      { title: '闄堥洩 浣滄枃璁茶瘎璇?', date: dateOffset(-3), start: '18:30', end: '19:30', type: 'class', link: 'https://meeting.example.com/teacher-li-4' },
+      { title: '闄堥洩 浣滄枃璁茶瘎璇?, date: dateOffset(-3), start: '18:30', end: '19:30', type: 'class', link: 'https://meeting.example.com/teacher-li-4' },
     ],
     chatMessages: [
-      ['student', '闄堥洩', '鑰佸笀锛屼綔鏂囨彁绾叉垜宸茬粡鎸変綘鐨勮姹傛敼浜嗐€?'],
-      ['teacher', '鏉庤€佸笀', '鎴戠湅鍒颁簡锛岃繖鐗堢粨鏋勬瘮涓婃娓呮寰堝銆?'],
-      ['teacher', '鏉庤€佸笀', '涓嬫鍙互鍐嶆妸渚嬪瓙鍐欏緱鏇村叿浣撲竴鐐广€?'],
+      ['student', '闄堥洩', '鑰佸笀锛屼綔鏂囨彁绾叉垜宸茬粡鎸変綘鐨勮姹傛敼浜嗐€?],
+      ['teacher', '鏉庤€佸笀', '鎴戠湅鍒颁簡锛岃繖鐗堢粨鏋勬瘮涓婃娓呮寰堝銆?],
+      ['teacher', '鏉庤€佸笀', '涓嬫鍙互鍐嶆妸渚嬪瓙鍐欏緱鏇村叿浣撲竴鐐广€?],
     ],
     submissions: [],
     notification: {
       type: 'homework',
       title: '浣滄枃浣滀笟鎻愰啋',
-      content: '浠婃櫄 23:59 鍓嶈瀹屾垚涓€绡?800 瀛楅檺鏃朵綔鏂囥€?',
+      content: '浠婃櫄 23:59 鍓嶈瀹屾垚涓€绡?800 瀛楅檺鏃朵綔鏂囥€?,
       related_type: 'study_task',
       related_id: 's4_task_4',
       scheduled_at: dateTimeOffset(0, '12:00:00'),
     },
     outlineItems: [
-      { type: 'listen', content: '鍥炵湅浣滄枃缁撴瀯璇句腑鐨勭珛鎰忕ず渚嬨€?', sort_order: 1 },
-      { type: 'write', content: '瀹屾垚涓€绡囪璁烘枃骞舵爣鍑虹粨鏋勫眰娆°€?', sort_order: 2 },
+      { type: 'listen', content: '鍥炵湅浣滄枃缁撴瀯璇句腑鐨勭珛鎰忕ず渚嬨€?, sort_order: 1 },
+      { type: 'write', content: '瀹屾垚涓€绡囪璁烘枃骞舵爣鍑虹粨鏋勫眰娆°€?, sort_order: 2 },
     ],
   },
   {
@@ -582,7 +572,7 @@ const students = [
     phone: '13800000005',
     name: '璧电',
     status: 'normal',
-    grade: '2026灞?',
+    grade: '2026灞?,
     subject: '鐢宠',
     coachKey: 'li',
     diagnosisKey: 'wang',
@@ -600,38 +590,38 @@ const students = [
     },
     course: { name: '鍏枃缁撴瀯涓嶆竻', progress: 8, status: 'in_progress' },
     noteTexts: [
-      '鍩虹璁＄畻澶辫杈冨锛屽缓璁厛鍥哄畾姣忔棩 20 鍒嗛挓鍩虹棰樸€?',
-      '鏈€杩戜袱鍛ㄧ己灏戜富鍔ㄥ弽棣堬紝閫傚悎鏀惧湪寮傚父瀛﹀憳鍒楄〃涓瀵熴€?',
+      '鍩虹璁＄畻澶辫杈冨锛屽缓璁厛鍥哄畾姣忔棩 20 鍒嗛挓鍩虹棰樸€?,
+      '鏈€杩戜袱鍛ㄧ己灏戜富鍔ㄥ弽棣堬紝閫傚悎鏀惧湪寮傚父瀛﹀憳鍒楄〃涓瀵熴€?,
     ],
-    flag: { flagged: 1, reason: '杩戞湡鍑哄嫟姝ｅ父锛屼絾浣滀笟姝ｇ‘鐜囨寔缁亸浣庯紝闇€瑕侀噸鐐圭洴鍩虹銆?', severity: 'medium' },
+    flag: { flagged: 1, reason: '杩戞湡鍑哄嫟姝ｅ父锛屼絾浣滀笟姝ｇ‘鐜囨寔缁亸浣庯紝闇€瑕侀噸鐐圭洴鍩虹銆?, severity: 'medium' },
     diagnosis: {
-      target_exam: '鍥借€冪敵璁?',
+      target_exam: '鍥借€冪敵璁?,
       target_score: 124,
       diagnosis_score: 88,
       diagnosis_date: dateOffset(-7),
-      teacher_comment: '鍩虹钖勫急浣嗛厤鍚堝害灏氬彲锛屽缓璁敤浣庨棬妲涗綔涓氬厛寤虹珛淇″績銆?',
+      teacher_comment: '鍩虹钖勫急浣嗛厤鍚堝害灏氬彲锛屽缓璁敤浣庨棬妲涗綔涓氬厛寤虹珛淇″績銆?,
       points: [
-        { point_name: '鍏枃缁撴瀯涓嶆竻', priority: 'high', description: '鍑芥暟鍥惧儚涓庢€ц川鎺屾彙涓嶇ǔ銆?', sort_order: 1 },
-        { point_name: '浣滄枃琛ㄨ揪涓嶇晠', priority: 'medium', description: '姝ラ涔﹀啓涓嶅畬鏁达紝澶卞垎杈冨銆?', sort_order: 2 },
+        { point_name: '鍏枃缁撴瀯涓嶆竻', priority: 'high', description: '鍑芥暟鍥惧儚涓庢€ц川鎺屾彙涓嶇ǔ銆?, sort_order: 1 },
+        { point_name: '浣滄枃琛ㄨ揪涓嶇晠', priority: 'medium', description: '姝ラ涔﹀啓涓嶅畬鏁达紝澶卞垎杈冨銆?, sort_order: 2 },
       ],
     },
     replayTitle: '鍑芥暟鍩虹鍥炴斁',
     answerTitle: '鍩虹璁粌涓€',
     answerScore: 8,
     calendar: [
-      { title: '璧电 鏁板鍩虹璇?', date: dateOffset(1), start: '18:30', end: '19:30', type: 'class', link: null },
+      { title: '璧电 鏁板鍩虹璇?, date: dateOffset(1), start: '18:30', end: '19:30', type: 'class', link: null },
       { title: '璧电 鍑芥暟鍩虹璁茶瘎', date: dateOffset(-4), start: '20:00', end: '21:00', type: 'class', link: null },
     ],
     chatMessages: [
-      ['student', '璧电', '鑰佸笀锛屾垜杩欐鍩虹棰樿繕鏄敊浜嗕笉灏戙€?'],
-      ['teacher', '鏉庤€佸笀', '娌″叧绯伙紝鎴戜滑鍏堟妸鏈€鍩虹鐨勫嚱鏁伴鍨嬬ǔ浣忋€?'],
-      ['teacher', '鏉庤€佸笀', '浠婃櫄鎶婇敊棰橀噸鏂版妱涓€閬嶏紝鏄庡ぉ鎴戠户缁湅銆?'],
+      ['student', '璧电', '鑰佸笀锛屾垜杩欐鍩虹棰樿繕鏄敊浜嗕笉灏戙€?],
+      ['teacher', '鏉庤€佸笀', '娌″叧绯伙紝鎴戜滑鍏堟妸鏈€鍩虹鐨勫嚱鏁伴鍨嬬ǔ浣忋€?],
+      ['teacher', '鏉庤€佸笀', '浠婃櫄鎶婇敊棰橀噸鏂版妱涓€閬嶏紝鏄庡ぉ鎴戠户缁湅銆?],
     ],
     submissions: [
       {
         id: 'pdf_s5_1',
-        reviewType: '鍗＄偣缁冧範棰?',
-        checkpoint: '鍏枃缁撴瀯涓嶆竻 绗?1 璁?',
+        reviewType: '鍗＄偣缁冧範棰?,
+        checkpoint: '鍏枃缁撴瀯涓嶆竻 绗?1 璁?,
         deadline: dateTimeOffset(1, '18:00:00'),
         priority: 'low',
         submittedNormal: 0,
@@ -646,14 +636,14 @@ const students = [
     notification: {
       type: 'system',
       title: '鍩虹钖勫急璺熻繘',
-      content: '璧电宸插姞鍏ラ噸鐐硅瀵熷悕鍗曪紝璇锋寔缁窡杩涘熀纭€浣滀笟銆?',
+      content: '璧电宸插姞鍏ラ噸鐐硅瀵熷悕鍗曪紝璇锋寔缁窡杩涘熀纭€浣滀笟銆?,
       related_type: 'student_flag',
       related_id: 's5',
       scheduled_at: dateTimeOffset(0, '09:10:00'),
     },
     outlineItems: [
-      { type: 'listen', content: '鍥炲惉鍑芥暟鍥惧儚鍩虹璇俱€?', sort_order: 1 },
-      { type: 'write', content: '瀹屾垚鍩虹璁粌绗?1 濂楀苟鏍囧嚭澶卞垎鐐广€?', sort_order: 2 },
+      { type: 'listen', content: '鍥炲惉鍑芥暟鍥惧儚鍩虹璇俱€?, sort_order: 1 },
+      { type: 'write', content: '瀹屾垚鍩虹璁粌绗?1 濂楀苟鏍囧嚭澶卞垎鐐广€?, sort_order: 2 },
     ],
     assignmentTask: {
       checkpoint: '鍏枃缁撴瀯涓嶆竻',
@@ -880,13 +870,13 @@ function buildDefaultStudyPlan(studentName, courseName, studentId) {
     {
       day: 1,
       status: 'completed',
-      tasks: [{ name: `${courseName} kickoff live`, type: 'live', duration: 60, completed: 1, resources: [] }],
+      tasks: [{ name: `${courseName} 寮€鐝洿鎾璥, type: 'live', duration: 60, completed: 1, resources: [] }],
     },
     {
       day: 2,
       status: 'completed',
       tasks: [{
-        name: `${courseName} core method lesson`,
+        name: `${courseName} 鏍稿績鏂规硶璇綻,
         type: 'video',
         duration: 45,
         completed: 1,
@@ -959,7 +949,7 @@ function getMailboxSeedRows(studentKey) {
     return [
       {
         category: '鏁欏寤鸿',
-        content: '寤鸿鍦ㄩ槄璇昏缁冨墠鍔犱竴娆℃枃绔犲畾浣嶅皬娴嬶紝鏂逛究鎴戝厛鎵惧埌鍏抽敭鍙ャ€?',
+        content: '寤鸿鍦ㄩ槄璇昏缁冨墠鍔犱竴娆℃枃绔犲畾浣嶅皬娴嬶紝鏂逛究鎴戝厛鎵惧埌鍏抽敭鍙ャ€?,
         anonymous: 0,
         status: 'pending',
       },
@@ -970,7 +960,7 @@ function getMailboxSeedRows(studentKey) {
     return [
       {
         category: '鏈嶅姟鎶曡瘔',
-        content: '甯屾湜鍔犲揩鍩虹宸╁浐浣滀笟鐨勬壒鏀归鐜囷紝杩欏懆鎯冲敖蹇煡閬撹嚜宸辩殑钖勫急鐐广€?',
+        content: '甯屾湜鍔犲揩鍩虹宸╁浐浣滀笟鐨勬壒鏀归鐜囷紝杩欏懆鎯冲敖蹇煡閬撹嚜宸辩殑钖勫急鐐广€?,
         anonymous: 1,
         status: 'read',
       },
@@ -988,16 +978,16 @@ function getExtraSeedNotifications(studentKey) {
   return [
     {
       type: 'system',
-      title: '鍏堝仛 1v1 璇婃柇锛屽啀瀹氬悗缁绋?',
-      content: '鍏堢敤浜哄伐璇婃柇鎵惧埌浣犵幇鍦ㄤ富瑕佺殑澶卞垎鐥呭洜锛屽啀鍐冲畾鍚庨潰搴旇鎬庝箞瀛︺€?',
+      title: '鍏堝仛 1v1 璇婃柇锛屽啀瀹氬悗缁绋?,
+      content: '鍏堢敤浜哄伐璇婃柇鎵惧埌浣犵幇鍦ㄤ富瑕佺殑澶卞垎鐥呭洜锛屽啀鍐冲畾鍚庨潰搴旇鎬庝箞瀛︺€?,
       related_type: 'diagnose_detail',
       related_id: 'diagnose_intro_s2',
       scheduled_at: dateTimeOffset(-1, '18:30:00'),
     },
     {
       type: 'system',
-      title: '鏂扮敤鎴疯瘖鏂浼樻儬宸插彂鏀?',
-      content: '浣犵殑璇婃柇璇句紭鎯犲凡缁忓彂鏀撅紝鐜板湪鍙互鍏堢湅鏍蜂緥鍐嶅喅瀹氭槸鍚﹁喘涔般€?',
+      title: '鏂扮敤鎴疯瘖鏂浼樻儬宸插彂鏀?,
+      content: '浣犵殑璇婃柇璇句紭鎯犲凡缁忓彂鏀撅紝鐜板湪鍙互鍏堢湅鏍蜂緥鍐嶅喅瀹氭槸鍚﹁喘涔般€?,
       related_type: 'diagnose_coupon',
       related_id: 'diagnose_coupon_s2',
       scheduled_at: dateTimeOffset(-1, '18:32:00'),
@@ -1038,22 +1028,14 @@ async function seed() {
     teacherIds[teacher.key] = await getId(conn, 'teachers', 'email', teacher.email)
   }
 
-  for (const avatar of studentAvatarPresets) {
-    await conn.query(
-      'INSERT INTO student_avatar_presets (avatar_key, label, avatar_url, sort_order) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE label = VALUES(label), avatar_url = VALUES(avatar_url), sort_order = VALUES(sort_order)',
-      [avatar.avatar_key, avatar.label, avatar.avatar_url, avatar.sort_order],
-    )
-  }
-
   const studentIds = {}
-  for (const [index, student] of students.entries()) {
+  for (const student of students) {
     await conn.query(
       'INSERT INTO students (openid, account, phone, password_hash, name, status) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE account = VALUES(account), phone = VALUES(phone), password_hash = VALUES(password_hash), name = VALUES(name), status = VALUES(status)',
       [student.openid, student.account || student.key, student.phone, passwordHash, student.name, student.status],
     )
     const studentId = await getId(conn, 'students', 'openid', student.openid)
     studentIds[student.key] = studentId
-    const avatarUrl = student.profile.avatar_url || studentAvatarPresets[index % studentAvatarPresets.length].avatar_url
     await conn.query(
       'INSERT INTO student_profiles (student_id, gender, grade, hometown, exam_status, exam_date, education, major, avatar_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE gender = VALUES(gender), grade = VALUES(grade), hometown = VALUES(hometown), exam_status = VALUES(exam_status), exam_date = VALUES(exam_date), education = VALUES(education), major = VALUES(major), avatar_url = VALUES(avatar_url)',
       [
@@ -1065,7 +1047,7 @@ async function seed() {
         student.profile.exam_date,
         student.profile.education,
         student.profile.major,
-        avatarUrl,
+        student.profile.avatar_url,
       ],
     )
   }
@@ -1188,7 +1170,7 @@ async function seed() {
 
     await conn.query(
       'INSERT INTO reviews (student_id, teacher_id, course_id, target_score, gained_score, feedback) VALUES (?, ?, ?, ?, ?, ?)',
-      [studentId, primaryTeacherId, courseId, 20, student.answerScore, `${student.course.name} weekly review generated`],
+      [studentId, primaryTeacherId, courseId, 20, student.answerScore, `${student.course.name} 鏈懆澶嶇洏宸茬敓鎴恅],
     )
     const [[review]] = await conn.query(
       'SELECT id FROM reviews WHERE student_id = ? ORDER BY id DESC LIMIT 1',
@@ -1239,12 +1221,12 @@ async function seed() {
       await conn.query(
         `INSERT INTO lesson_materials (teacher_id, student_id, calendar_event_id, material_type, title, url)
          VALUES (?, ?, ?, 'replay', ?, ?)` ,
-        [primaryTeacherId, studentId, calendarEventIds[1], `Replay: ${student.calendar[1].title}`, 'https://meeting.example.com/replay-s1'],
+        [primaryTeacherId, studentId, calendarEventIds[1], `璇剧▼鍥炴斁锛?{student.calendar[1].title}`, 'https://meeting.example.com/replay-s1'],
       )
       await conn.query(
         `INSERT INTO lesson_materials (teacher_id, student_id, calendar_event_id, material_type, title, file_name, stored_file)
          VALUES (?, ?, ?, 'handout', ?, ?, ?)` ,
-        [primaryTeacherId, studentId, calendarEventIds[1], `Handout: ${student.calendar[1].title}`, `${student.name}-lesson-handout.pdf`, SAMPLE_PDF_NAME],
+        [primaryTeacherId, studentId, calendarEventIds[1], `璇惧悗璁蹭箟锛?{student.calendar[1].title}`, `${student.name}-璇惧悗璁蹭箟.pdf`, SAMPLE_PDF_NAME],
       )
     }
 
@@ -1343,7 +1325,7 @@ async function seed() {
 }
 
 seed().catch((err) => {
-  console.error('鍐欏叆澶辫触锛?', err.message)
+  console.error('鍐欏叆澶辫触锛?, err.message)
   process.exit(1)
 })
 

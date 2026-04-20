@@ -1,0 +1,165 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <title>录播课</title>
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+    }
+    #player {
+      width: 100%;
+      height: 100%;
+    }
+    #error {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: #111827;
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+      padding: 24px;
+      text-align: center;
+      box-sizing: border-box;
+    }
+  </style>
+</head>
+<body>
+  <div id="player"></div>
+  <div id="error"></div>
+  <script src="https://res.wx.qq.com/open/js/jweixin-1.6.0.js"></script>
+  <script src="https://player.polyv.net/script/player.js"></script>
+  <script>
+    (function () {
+      var params = new URLSearchParams(window.location.search);
+      var vid = (params.get('vid') || '').trim();
+      var playsafe = (params.get('playsafe') || '').trim();
+      var ts = (params.get('ts') || '').trim();
+      var sign = (params.get('sign') || '').trim();
+      var title = (params.get('title') || '录播课').trim();
+      var autoBackOnEnded = /^(1|true|yes)$/i.test((params.get('autoBackOnEnded') || '').trim());
+      var errorEl = document.getElementById('error');
+      var endedNotified = false;
+      var videoObserver = null;
+
+      document.title = title;
+
+      function showError(message) {
+        errorEl.textContent = message || '播放器加载失败';
+        errorEl.style.display = 'flex';
+      }
+
+      function notifyPlaybackEnded() {
+        if (!autoBackOnEnded || endedNotified) {
+          return;
+        }
+
+        endedNotified = true;
+
+        try {
+          if (window.wx && wx.miniProgram) {
+            wx.miniProgram.postMessage({
+              data: {
+                type: 'polyv_ended',
+                vid: vid,
+                endedAt: Date.now()
+              }
+            });
+
+            setTimeout(function () {
+              try {
+                wx.miniProgram.navigateBack({ delta: 1 });
+              } catch (_error) {}
+            }, 120);
+          }
+        } catch (_error) {}
+      }
+
+      function bindVideoEnded(target) {
+        if (!target || target.__polyvEndedBound) {
+          return;
+        }
+
+        target.__polyvEndedBound = true;
+        target.addEventListener('ended', notifyPlaybackEnded);
+      }
+
+      function bindPlayerEndedEvents(player) {
+        if (!player || typeof player.on !== 'function') {
+          return;
+        }
+
+        ['ended', 'playEnded', 's2j_onPlayOver'].forEach(function (eventName) {
+          try {
+            player.on(eventName, notifyPlaybackEnded);
+          } catch (_error) {}
+        });
+      }
+
+      function startWatchingVideoEnded() {
+        bindVideoEnded(document.querySelector('video'));
+
+        if (typeof MutationObserver !== 'function') {
+          return;
+        }
+
+        videoObserver = new MutationObserver(function () {
+          bindVideoEnded(document.querySelector('video'));
+        });
+
+        videoObserver.observe(document.body, {
+          childList: true,
+          subtree: true
+        });
+      }
+
+      if (!vid) {
+        showError('缺少视频 VID');
+        return;
+      }
+
+      if (!playsafe || !ts || !sign) {
+        showError('缺少录播鉴权参数');
+        return;
+      }
+
+      if (typeof window.polyvPlayer !== 'function') {
+        showError('播放器脚本加载失败');
+        return;
+      }
+
+      try {
+        var player = window.polyvPlayer({
+          wrap: '#player',
+          vid: vid,
+          playsafe: playsafe,
+          ts: ts,
+          sign: sign,
+          width: '100%',
+          height: '100%',
+          autoplay: false
+        });
+
+        if (autoBackOnEnded) {
+          bindPlayerEndedEvents(player);
+          startWatchingVideoEnded();
+          window.addEventListener('beforeunload', function () {
+            if (videoObserver) {
+              videoObserver.disconnect();
+            }
+          });
+        }
+      } catch (error) {
+        showError(error && error.message ? error.message : '播放器初始化失败');
+      }
+    })();
+  </script>
+</body>
+</html>

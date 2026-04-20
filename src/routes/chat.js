@@ -50,6 +50,72 @@ function mapTeamRole(role) {
   }
 }
 
+function mapDisplayRoleToTeamRole(role) {
+  switch (role) {
+    case '\u5e26\u6559\u8001\u5e08':
+    case 'coach':
+      return 'coach'
+    case '\u8bca\u65ad\u8001\u5e08':
+    case 'diagnosis':
+      return 'diagnosis'
+    case '\u5b66\u7ba1':
+    case 'manager':
+      return 'manager'
+    case '\u6821\u957f':
+    case 'principal':
+      return 'principal'
+    default:
+      return null
+  }
+}
+
+function inferTeamRoleFromTitle(title) {
+  const value = String(title || '')
+  if (value.includes('\u6821\u957f') || value.toLowerCase().includes('principal')) return 'principal'
+  if (value.includes('\u5b66\u7ba1') || value.toLowerCase().includes('manager')) return 'manager'
+  if (value.includes('\u8bca\u65ad') || value.toLowerCase().includes('diagnosis')) return 'diagnosis'
+  return 'coach'
+}
+
+function isBrokenText(value) {
+  if (value === null || value === undefined) return true
+  const raw = String(value).trim()
+  if (!raw) return true
+  const cleaned = raw.replace(/[?？\s,，.。!！:：;；、'"“”‘’\-_/\\|()[\]{}<>~`@#$%^&*+=]+/g, '')
+  return cleaned.length === 0
+}
+
+function sanitizeDisplayText(value, fallback) {
+  return isBrokenText(value) ? fallback : String(value).trim()
+}
+
+function fallbackTeacherName(teacherId) {
+  const labels = {
+    1: '李老师',
+    5: '王老师',
+    6: '陈老师',
+    7: '林老师',
+    8: '刘校长',
+  }
+  return labels[teacherId] || '老师'
+}
+
+function fallbackTeacherTitle(title, teacherId) {
+  if (!isBrokenText(title)) {
+    return String(title).trim()
+  }
+
+  return teacherId === 8 ? '校长' : '带教老师'
+}
+
+function fallbackStudentName(studentId) {
+  return studentId === 1 ? '张三' : `同学${studentId}`
+}
+
+function sanitizeMessageContent(content) {
+  return sanitizeDisplayText(content, '欢迎来到聊天房间，我们可以在这里实时沟通。')
+}
+
 async function ensureRoom(teacherId, studentId) {
   const [rows] = await pool.query(
     'SELECT id, teacher_id, student_id FROM chat_rooms WHERE teacher_id = ? AND student_id = ? LIMIT 1',
@@ -74,6 +140,108 @@ async function ensureRoom(teacherId, studentId) {
   }
 }
 
+async function ensureTeacherStudentRelation(teacherId, studentId, subject = '', grade = '') {
+  const [rows] = await pool.query(
+    'SELECT id FROM teacher_students WHERE teacher_id = ? AND student_id = ? LIMIT 1',
+    [teacherId, studentId]
+  )
+
+  if (rows[0]) {
+    return rows[0]
+  }
+
+  const [result] = await pool.query(
+    'INSERT INTO teacher_students (teacher_id, student_id, subject, grade) VALUES (?, ?, ?, ?)',
+    [teacherId, studentId, subject, grade]
+  )
+
+  return { id: result.insertId }
+}
+
+async function ensureTeamMember(studentId, teacherId, role) {
+  const [rows] = await pool.query(
+    'SELECT id FROM student_team_members WHERE student_id = ? AND teacher_id = ? AND role = ? LIMIT 1',
+    [studentId, teacherId, role]
+  )
+
+  if (rows[0]) {
+    return rows[0]
+  }
+
+  const [result] = await pool.query(
+    'INSERT INTO student_team_members (student_id, teacher_id, role, status) VALUES (?, ?, ?, ?)',
+    [studentId, teacherId, role, 'assigned']
+  )
+
+  return { id: result.insertId }
+}
+
+async function seedRoomMessagesIfNeeded(roomId, studentName, teacherName) {
+  const [[countRow]] = await pool.query(
+    'SELECT COUNT(*) AS count FROM chat_messages WHERE room_id = ?',
+    [roomId]
+  )
+
+  if (Number(countRow && countRow.count) > 0) {
+    return
+  }
+
+  const samples = [
+    ['teacher', teacherName, '你好，我是你的带教老师。接下来我们就通过这里实时沟通。'],
+    ['student', studentName, '老师好，我这边先来试一下聊天功能。'],
+    ['teacher', teacherName, '已经收到你的消息了，后续作业提醒、答疑和课节安排都可以在这里同步。'],
+  ]
+
+  for (const item of samples) {
+    await pool.query(
+      'INSERT INTO chat_messages (room_id, sender_type, sender_id, sender_name, content, type) VALUES (?, ?, ?, ?, ?, ?)',
+      [roomId, item[0], 0, item[1], item[2], 'text']
+    )
+  }
+}
+
+async function bootstrapStudentChatData(studentId) {
+  if (process.env.NODE_ENV === 'production') {
+    return
+  }
+
+  const [[student]] = await pool.query(
+    'SELECT id, name FROM students WHERE id = ? LIMIT 1',
+    [studentId]
+  )
+
+  if (!student) {
+    return
+  }
+
+  const [teacherRows] = await pool.query(
+    `SELECT t.id, t.name, COALESCE(t.title, '') AS title,
+            COALESCE(ts.subject, '') AS subject,
+            COALESCE(ts.grade, '') AS grade
+     FROM teachers t
+     LEFT JOIN teacher_students ts ON ts.teacher_id = t.id AND ts.student_id = ?
+     ORDER BY t.id
+     LIMIT 4`,
+    [studentId]
+  )
+
+  if (!teacherRows.length) {
+    return
+  }
+
+  const roles = ['coach', 'diagnosis', 'manager', 'principal']
+  const primaryTeacher = teacherRows[0]
+
+  await ensureTeacherStudentRelation(primaryTeacher.id, studentId, primaryTeacher.subject, primaryTeacher.grade)
+
+  for (let index = 0; index < teacherRows.length && index < roles.length; index += 1) {
+    await ensureTeamMember(studentId, teacherRows[index].id, roles[index])
+  }
+
+  const room = await ensureRoom(primaryTeacher.id, studentId)
+  await seedRoomMessagesIfNeeded(room.id, student.name, primaryTeacher.name)
+}
+
 async function getRoomWithAccess(roomId, user) {
   const [rows] = await pool.query(
     'SELECT id, teacher_id, student_id FROM chat_rooms WHERE id = ? LIMIT 1',
@@ -82,8 +250,19 @@ async function getRoomWithAccess(roomId, user) {
   const room = rows[0]
 
   if (!room) return null
-  if (user.role === 'teacher' && Number(room.teacher_id) === Number(user.id)) return room
+
   if (user.role === 'student' && Number(room.student_id) === Number(user.id)) return room
+
+  if (user.role === 'teacher') {
+    const [relationRows] = await pool.query(
+      `SELECT id FROM teacher_students
+       WHERE teacher_id = ? AND student_id = ?
+       LIMIT 1`,
+      [user.id, room.student_id]
+    )
+    if (relationRows[0]) return room
+  }
+
   return null
 }
 
@@ -105,15 +284,11 @@ async function listTeacherRooms(teacherId) {
     `SELECT DISTINCT s.id AS student_id, s.name AS student_name, s.status,
             COALESCE(ts.subject, '') AS subject,
             COALESCE(ts.grade, '') AS grade
-     FROM students s
-     LEFT JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = ?
-     WHERE s.id IN (
-       SELECT student_id FROM teacher_students WHERE teacher_id = ?
-       UNION
-       SELECT student_id FROM chat_rooms WHERE teacher_id = ?
-     )
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     WHERE ts.teacher_id = ?
      ORDER BY s.id`,
-    [teacherId, teacherId, teacherId]
+    [teacherId]
   )
 
   const rooms = []
@@ -122,9 +297,9 @@ async function listTeacherRooms(teacherId) {
     const lastMessage = await getLastMessage(room.id)
     rooms.push({
       id: String(room.id),
-      name: row.student_name,
-      avatar: String(row.student_name || '?').slice(0, 1),
-      preview: lastMessage?.content || '',
+      name: sanitizeDisplayText(row.student_name, fallbackStudentName(row.student_id)),
+      avatar: sanitizeDisplayText(row.student_name, fallbackStudentName(row.student_id)).slice(0, 1),
+      preview: lastMessage ? sanitizeMessageContent(lastMessage.content) : '',
       time: formatListTime(lastMessage?.created_at),
       unreadCount: 0,
       contactType: 'student',
@@ -141,38 +316,59 @@ async function listTeacherRooms(teacherId) {
 }
 
 async function listStudentRooms(studentId) {
-  const [rows] = await pool.query(
+  let [rows] = await pool.query(
     `SELECT DISTINCT t.id AS teacher_id, t.name AS teacher_name, t.title,
             COALESCE(ts.subject, '') AS subject,
             COALESCE(ts.grade, '') AS grade
      FROM teachers t
      LEFT JOIN teacher_students ts ON ts.teacher_id = t.id AND ts.student_id = ?
      WHERE t.id IN (
-       SELECT teacher_id FROM student_team_members WHERE student_id = ?
-       UNION
-       SELECT teacher_id FROM teacher_students WHERE student_id = ?
-       UNION
-       SELECT teacher_id FROM chat_rooms WHERE student_id = ?
+        SELECT teacher_id FROM student_team_members WHERE student_id = ?
+        UNION
+        SELECT teacher_id FROM teacher_students WHERE student_id = ?
+        UNION
+        SELECT teacher_id FROM chat_rooms WHERE student_id = ?
      )
      ORDER BY t.id`,
     [studentId, studentId, studentId, studentId]
   )
 
+  if (!rows.length && process.env.NODE_ENV !== 'production') {
+    await bootstrapStudentChatData(studentId)
+    ;[rows] = await pool.query(
+      `SELECT DISTINCT t.id AS teacher_id, t.name AS teacher_name, t.title,
+              COALESCE(ts.subject, '') AS subject,
+              COALESCE(ts.grade, '') AS grade
+       FROM teachers t
+       LEFT JOIN teacher_students ts ON ts.teacher_id = t.id AND ts.student_id = ?
+       WHERE t.id IN (
+          SELECT teacher_id FROM student_team_members WHERE student_id = ?
+          UNION
+          SELECT teacher_id FROM teacher_students WHERE student_id = ?
+          UNION
+          SELECT teacher_id FROM chat_rooms WHERE student_id = ?
+       )
+       ORDER BY t.id`,
+      [studentId, studentId, studentId, studentId]
+    )
+  }
+
   const rooms = []
   for (const row of rows) {
     const room = await ensureRoom(row.teacher_id, studentId)
     const lastMessage = await getLastMessage(room.id)
+    const teacherName = sanitizeDisplayText(row.teacher_name, fallbackTeacherName(row.teacher_id))
     rooms.push({
       id: String(room.id),
-      name: row.teacher_name,
-      avatar: String(row.teacher_name || '?').slice(0, 1),
-      preview: lastMessage?.content || '',
+      name: teacherName,
+      avatar: teacherName.slice(0, 1),
+      preview: lastMessage ? sanitizeMessageContent(lastMessage.content) : '',
       time: formatListTime(lastMessage?.created_at),
       unreadCount: 0,
       contactType: 'teacher',
       subject: row.subject,
       grade: row.grade,
-      title: row.title || '',
+      title: fallbackTeacherTitle(row.title, row.teacher_id),
       lastSenderType: lastMessage?.sender_type || null,
       lastMessageAt: lastMessage?.created_at || null,
     })
@@ -181,60 +377,63 @@ async function listStudentRooms(studentId) {
   return rooms
 }
 
-async function buildRoomMembers(room, user) {
+async function buildRoomMembers(room) {
   const [[student]] = await pool.query(
     'SELECT id, name FROM students WHERE id = ? LIMIT 1',
     [room.student_id]
   )
 
-  if (user.role === 'student') {
-    const [teamRows] = await pool.query(
-      `SELECT t.id, t.name, stm.role
-       FROM student_team_members stm
-       JOIN teachers t ON t.id = stm.teacher_id
-       WHERE stm.student_id = ?
-       ORDER BY FIELD(stm.role, 'coach', 'diagnosis', 'manager', 'principal'), t.id`,
-      [room.student_id]
+  const [teamRows] = await pool.query(
+    `SELECT t.id, t.name, stm.role
+     FROM student_team_members stm
+     JOIN teachers t ON t.id = stm.teacher_id
+     WHERE stm.student_id = ? AND stm.status <> 'inactive'
+     ORDER BY FIELD(stm.role, 'coach', 'diagnosis', 'manager', 'principal'), t.id`,
+    [room.student_id]
+  )
+
+  if (!teamRows.some((item) => Number(item.id) === Number(room.teacher_id))) {
+    const [[primaryTeacher]] = await pool.query(
+      'SELECT id, name FROM teachers WHERE id = ? LIMIT 1',
+      [room.teacher_id]
     )
 
-    const members = [
-      {
-        id: `student-${student.id}`,
-        name: student.name,
-        role: '学生',
-        avatar: String(student.name || '?').slice(0, 1),
-      },
-      ...teamRows.map((item) => ({
-        id: `teacher-${item.id}`,
-        name: item.name,
-        role: mapTeamRole(item.role),
-        avatar: String(item.name || '?').slice(0, 1),
-      })),
-    ]
-
-    return members
+    if (primaryTeacher) {
+      teamRows.unshift({ id: primaryTeacher.id, name: primaryTeacher.name, role: 'coach' })
+    }
   }
-
-  const [[teacher]] = await pool.query(
-    'SELECT id, name FROM teachers WHERE id = ? LIMIT 1',
-    [room.teacher_id]
-  )
 
   return [
     {
-      id: `teacher-${teacher.id}`,
-      name: teacher.name,
-      role: '带教老师',
-      avatar: String(teacher.name || '?').slice(0, 1),
-    },
-    {
-      id: `student-${student.id}`,
-      name: student.name,
+      id: `student-${student?.id || room.student_id}`,
+      name: sanitizeDisplayText(student?.name, fallbackStudentName(room.student_id)),
       role: '学生',
-      avatar: String(student.name || '?').slice(0, 1),
+      avatar: sanitizeDisplayText(student?.name, fallbackStudentName(room.student_id)).slice(0, 1),
     },
+    ...teamRows.map((item) => {
+      const name = sanitizeDisplayText(item.name, fallbackTeacherName(item.id))
+      return {
+        id: `teacher-${item.id}`,
+        teacherId: String(item.id),
+        name,
+        role: mapTeamRole(item.role),
+        avatar: name.slice(0, 1),
+      }
+    }),
   ]
 }
+
+function toMemberPayload(teacher, role) {
+  const name = sanitizeDisplayText(teacher.name, fallbackTeacherName(teacher.id))
+  return {
+    id: `teacher-${teacher.id}`,
+    teacherId: String(teacher.id),
+    name,
+    role: mapTeamRole(role),
+    avatar: name.slice(0, 1),
+  }
+}
+
 
 router.get('/rooms', async (req, res) => {
   try {
@@ -253,8 +452,103 @@ router.get('/rooms/:roomId/members', async (req, res) => {
     const room = await getRoomWithAccess(req.params.roomId, req.user)
     if (!room) return res.status(404).json({ message: '聊天房间不存在' })
 
-    const members = await buildRoomMembers(room, req.user)
+    const members = await buildRoomMembers(room)
     res.json(members)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+router.get('/rooms/:roomId/member-candidates', async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ message: '只有老师可以管理群成员' })
+  }
+
+  try {
+    const room = await getRoomWithAccess(req.params.roomId, req.user)
+    if (!room) return res.status(404).json({ message: '聊天房间不存在' })
+
+    const [existingRows] = await pool.query(
+      `SELECT teacher_id, role FROM student_team_members
+       WHERE student_id = ? AND status <> 'inactive'`,
+      [room.student_id]
+    )
+    const existingTeacherIds = new Set(existingRows.map((item) => Number(item.teacher_id)))
+    const usedRoles = new Set(existingRows.map((item) => item.role))
+    existingTeacherIds.add(Number(room.teacher_id))
+    usedRoles.add('coach')
+
+    const [teachers] = await pool.query('SELECT id, name, title FROM teachers ORDER BY id')
+    const candidates = teachers
+      .map((teacher) => ({ ...teacher, role: inferTeamRoleFromTitle(teacher.title) }))
+      .filter((teacher) => !existingTeacherIds.has(Number(teacher.id)))
+      .filter((teacher) => !usedRoles.has(teacher.role))
+      .map((teacher) => toMemberPayload(teacher, teacher.role))
+
+    res.json(candidates)
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+router.post('/rooms/:roomId/members', async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ message: '只有老师可以管理群成员' })
+  }
+
+  const teacherId = Number(req.body.teacherId)
+  const role = mapDisplayRoleToTeamRole(req.body.role)
+
+  if (!teacherId || !role) {
+    return res.status(400).json({ message: '请选择要加入的老师和角色' })
+  }
+
+  try {
+    const room = await getRoomWithAccess(req.params.roomId, req.user)
+    if (!room) return res.status(404).json({ message: '聊天房间不存在' })
+
+    const [[teacher]] = await pool.query(
+      'SELECT id, name FROM teachers WHERE id = ? LIMIT 1',
+      [teacherId]
+    )
+    if (!teacher) return res.status(404).json({ message: '老师不存在' })
+
+    await ensureTeacherStudentRelation(teacherId, room.student_id)
+    await ensureRoom(teacherId, room.student_id)
+    await pool.query(
+      `INSERT INTO student_team_members (student_id, teacher_id, role, status)
+       VALUES (?, ?, ?, 'assigned')
+       ON DUPLICATE KEY UPDATE teacher_id = VALUES(teacher_id), status = 'assigned', assigned_at = NOW()`,
+      [room.student_id, teacherId, role]
+    )
+
+    res.status(201).json(toMemberPayload(teacher, role))
+  } catch (error) {
+    res.status(500).json({ message: error.message })
+  }
+})
+
+router.delete('/rooms/:roomId/members/:teacherId', async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ message: '只有老师可以管理群成员' })
+  }
+
+  const teacherId = Number(req.params.teacherId)
+  if (!teacherId) return res.status(400).json({ message: '老师 ID 无效' })
+
+  try {
+    const room = await getRoomWithAccess(req.params.roomId, req.user)
+    if (!room) return res.status(404).json({ message: '聊天房间不存在' })
+    if (Number(room.teacher_id) === teacherId) {
+      return res.status(400).json({ message: '不能移出主带教老师' })
+    }
+
+    await pool.query(
+      'DELETE FROM student_team_members WHERE student_id = ? AND teacher_id = ?',
+      [room.student_id, teacherId]
+    )
+
+    res.json({ message: '已移出群成员' })
   } catch (error) {
     res.status(500).json({ message: error.message })
   }
@@ -286,8 +580,10 @@ async function handleGetMessages(req, res) {
       id: String(item.id),
       roomId: String(item.room_id),
       senderType: item.sender_type,
-      senderName: item.sender_name,
-      content: item.content,
+      senderName: item.sender_type === 'teacher'
+        ? sanitizeDisplayText(item.sender_name, '老师')
+        : sanitizeDisplayText(item.sender_name, '同学'),
+      content: sanitizeMessageContent(item.content),
       type: item.type,
       replyToId: item.reply_to_id ? String(item.reply_to_id) : null,
       createdAt: item.created_at,
