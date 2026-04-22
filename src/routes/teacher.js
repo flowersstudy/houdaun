@@ -8,20 +8,17 @@ const auth = require('../middleware/auth')
 const {
   buildLearningPathPayload,
   findTaskDefinition,
+  summarizeLearningPathProgress,
 } = require('../lib/learningPath')
 const {
   ensureStudentFeedbackTable,
   getFeedbackSourceLabel,
   mapStudentFeedbackRow,
 } = require('../lib/studentFeedback')
+const { normalizeCheckpointName } = require('../lib/checkpoint')
+const { UPLOADS_DIR } = require('../lib/uploads')
 
 router.use(auth('teacher'))
-
-const DEFAULT_UPLOADS_DIR = path.join(__dirname, '../../uploads')
-const UPLOADS_DIR = process.env.UPLOADS_DIR
-  ? path.resolve(process.env.UPLOADS_DIR)
-  : DEFAULT_UPLOADS_DIR
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true })
 
 const materialStorage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -36,32 +33,6 @@ const uploadMaterial = multer({
 })
 
 const TASK_COLORS = ['#e8845a', '#6b9e78', '#7b8fc4', '#c4847b', '#9b84c4', '#84b8c4', '#c4b484', '#84c4a4']
-
-const CHECKPOINT_NAME_ALIASES = [
-  ['\u82f1\u8bed\u63d0\u5206\u51b2\u523a\u73ed', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u82f1\u8bed\u9605\u8bfb\u7cbe\u7ec3\u73ed', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u6570\u5b66\u538b\u8f74\u7a81\u7834\u73ed', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u6570\u5b66\u57fa\u7840\u5de9\u56fa\u73ed', '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u8bed\u6587\u5199\u4f5c\u63d0\u5347\u73ed', '\u4f5c\u6587\u7acb\u610f\u4e0d\u51c6'],
-  ['\u9605\u8bfb\u5b9a\u4f4d', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u9605\u8bfb\u7406\u89e3', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u4e3b\u65e8\u9898', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u9605\u8bfb\u4e13\u9879', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u6570\u5217\u7efc\u5408', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u6570\u5b66\u538b\u8f74\u7a81\u7834', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u51fd\u6570\u8ba8\u8bba', '\u5206\u6790\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u4e66\u9762\u8868\u8fbe', '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545'],
-  ['\u8bae\u8bba\u6587\u7ed3\u6784', '\u4f5c\u6587\u903b\u8f91\u4e0d\u6e05'],
-  ['\u51fd\u6570\u57fa\u7840', '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u8ba1\u7b97\u89c4\u8303', '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545'],
-]
-
-function normalizeCheckpointName(value) {
-  const source = String(value || '').trim()
-  if (!source) return ''
-
-  return CHECKPOINT_NAME_ALIASES.reduce((result, [from, to]) => result.replaceAll(from, to), source)
-}
 
 function buildDefaultStudyPlan(studentName, courseName, studentId) {
   return [
@@ -581,16 +552,53 @@ async function getPendingReplyItems(teacherId) {
 }
 
 async function getPendingAssignItems(teacherId) {
-  const [rows] = await pool.query(
+  const [taskRows] = await pool.query(
     `SELECT pat.id, pat.student_id, pat.checkpoint, pat.detail, s.name AS student_name, cr.id AS contact_id
      FROM practice_assignment_tasks pat
      JOIN students s ON s.id = pat.student_id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = pat.teacher_id AND cr.student_id = pat.student_id
-     WHERE pat.teacher_id = ? AND pat.status = 'pending'
+     LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = pat.student_id
+     WHERE pat.status = 'pending'
      ORDER BY pat.created_at ASC
      LIMIT 20`,
     [teacherId],
   )
+
+  const [unassignedRows] = await pool.query(
+    `SELECT s.id AS student_id, s.name AS student_name, cr.id AS contact_id
+     FROM students s
+     LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = s.id
+     WHERE NOT EXISTS (
+       SELECT 1 FROM student_courses sc WHERE sc.student_id = s.id
+     )
+       AND NOT EXISTS (
+         SELECT 1 FROM practice_assignment_tasks pat
+         WHERE pat.student_id = s.id AND pat.status = 'pending'
+       )
+     ORDER BY s.created_at DESC, s.id DESC
+     LIMIT ?`,
+    [teacherId, Math.max(0, 20 - taskRows.length)],
+  )
+
+  const rows = [
+    ...taskRows,
+    ...unassignedRows.map((row) => ({
+      ...row,
+      id: `student_${row.student_id}`,
+      checkpoint: '',
+      detail: '',
+    })),
+  ]
+
+  return rows.map((row) => ({
+    id: `assign_${row.id}`,
+    name: row.student_name,
+    subtitle: `${normalizeCheckpointName(row.checkpoint || '\u5b66\u4e60\u5361\u70b9')} \u00b7 ${row.detail || '\u5f85\u5206\u914d\u7ec3\u4e60\u9898'}`,
+    actionLabel: '\u53bb\u5206\u914d',
+    avatar: avatar(row.student_name),
+    color: colorById(row.student_id),
+    contactId: row.contact_id ? String(row.contact_id) : undefined,
+    studentId: String(row.student_id),
+  }))
 
   return rows.map((row) => ({
     id: `assign_${row.id}`,
@@ -1191,13 +1199,28 @@ router.get('/students', async (req, res) => {
   const teacherId = req.user.id
   try {
     const [rows] = await pool.query(`
-      SELECT s.id, s.name, s.status, ts.subject, ts.grade,
-             MAX(ce.date) as last_session_date
-      FROM teacher_students ts
-      JOIN students s ON ts.student_id = s.id
+      SELECT s.id,
+             s.name,
+             s.status,
+             COALESCE(
+               MAX(ts_self.subject),
+               SUBSTRING_INDEX(GROUP_CONCAT(ts_all.subject ORDER BY ts_all.created_at DESC, ts_all.id DESC SEPARATOR '\n'), '\n', 1),
+               ''
+             ) AS subject,
+             COALESCE(
+               NULLIF(sp.grade, ''),
+               MAX(ts_self.grade),
+               SUBSTRING_INDEX(GROUP_CONCAT(ts_all.grade ORDER BY ts_all.created_at DESC, ts_all.id DESC SEPARATOR '\n'), '\n', 1),
+               ''
+             ) AS grade,
+             MAX(ce.date) AS last_session_date
+      FROM students s
+      LEFT JOIN student_profiles sp ON sp.student_id = s.id
+      LEFT JOIN teacher_students ts_self ON ts_self.student_id = s.id AND ts_self.teacher_id = ?
+      LEFT JOIN teacher_students ts_all ON ts_all.student_id = s.id
       LEFT JOIN calendar_events ce ON ce.teacher_id = ? AND ce.student_id = s.id
-      WHERE ts.teacher_id = ?
-      GROUP BY s.id, s.name, s.status, ts.subject, ts.grade
+      GROUP BY s.id, s.name, s.status, sp.grade, s.created_at
+      ORDER BY FIELD(s.status, 'new', 'normal', 'abnormal', 'leave'), s.created_at DESC, s.id DESC
     `, [teacherId, teacherId])
     res.json(rows)
   } catch (err) {
@@ -1481,7 +1504,14 @@ async function getReviewPointStatusesForStudent(studentId) {
     if (!isMissingTableError(error)) throw error
   }
 
-  return REVIEW_POINT_LIST.map((item) => statusMap[item.pointName])
+  return REVIEW_POINT_LIST.map((item) => {
+    const entry = statusMap[item.pointName]
+    return {
+      pointId: entry.id,
+      pointName: entry.pointName,
+      status: entry.status,
+    }
+  })
 }
 
 function getStartOfLocalDay(date = new Date()) {
@@ -1490,11 +1520,42 @@ function getStartOfLocalDay(date = new Date()) {
   return current
 }
 
+function getStartOfWeek(date = new Date()) {
+  const current = getStartOfLocalDay(date)
+  const day = current.getDay() || 7
+  current.setDate(current.getDate() - day + 1)
+  return current
+}
+
+function getStartOfMonth(date = new Date()) {
+  const current = getStartOfLocalDay(date)
+  current.setDate(1)
+  return current
+}
+
+function addDays(date, offset) {
+  const current = new Date(date)
+  current.setDate(current.getDate() + offset)
+  return current
+}
+
+function addMonths(date, offset) {
+  const current = new Date(date)
+  current.setMonth(current.getMonth() + offset)
+  return current
+}
+
 function formatDateKey(date) {
   const year = date.getFullYear()
   const month = `${date.getMonth() + 1}`.padStart(2, '0')
   const day = `${date.getDate()}`.padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function formatMonthKey(date) {
+  const year = date.getFullYear()
+  const month = `${date.getMonth() + 1}`.padStart(2, '0')
+  return `${year}-${month}`
 }
 
 function parseValidDate(value) {
@@ -1511,21 +1572,193 @@ function getLocalDayKey(date) {
   return formatDateKey(getStartOfLocalDay(date))
 }
 
+function buildDayBuckets(now = new Date(), count = 7) {
+  const start = getStartOfWeek(now)
+  const labels = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = addDays(start, index)
+    return {
+      key: `day${index + 1}`,
+      bucketKey: formatDateKey(date),
+      label: labels[index] || `第${index + 1}天`,
+      sortOrder: index + 1,
+      cycleType: 'day',
+    }
+  })
+}
+
+function buildWeekBuckets(now = new Date(), count = 4) {
+  const currentWeek = getStartOfWeek(now)
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = addDays(currentWeek, (index - (count - 1)) * 7)
+    return {
+      key: `week${index + 1}`,
+      bucketKey: formatDateKey(date),
+      label: `第${index + 1}周`,
+      sortOrder: index + 1,
+      cycleType: 'week',
+    }
+  })
+}
+
+function buildMonthBuckets(now = new Date(), count = 6) {
+  const currentMonth = getStartOfMonth(now)
+
+  return Array.from({ length: count }, (_, index) => {
+    const date = addMonths(currentMonth, index - (count - 1))
+    return {
+      key: `month${index + 1}`,
+      bucketKey: formatMonthKey(date),
+      label: `${date.getMonth() + 1}月`,
+      sortOrder: index + 1,
+      cycleType: 'month',
+    }
+  })
+}
+
+async function buildStudyTimesFromSessions(studentId, now = new Date()) {
+  const dayBuckets = buildDayBuckets(now)
+  const weekBuckets = buildWeekBuckets(now)
+  const monthBuckets = buildMonthBuckets(now)
+  const allBuckets = [...dayBuckets, ...weekBuckets, ...monthBuckets]
+
+  let sessionRows = []
+  let manualRows = []
+  try {
+    const [rows] = await pool.query(
+      `SELECT started_at, ended_at, duration_sec
+       FROM study_sessions
+       WHERE student_id = ?
+         AND started_at IS NOT NULL
+         AND status IN ('started', 'completed')`,
+      [studentId]
+    )
+    sessionRows = rows
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error
+  }
+
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         period_key AS \`key\`,
+         period_label AS label,
+         hours,
+         sort_order AS sortOrder,
+         cycle_type AS cycleType
+       FROM study_time_stats
+       WHERE student_id = ?
+         AND id IN (
+           SELECT MAX(id)
+           FROM study_time_stats
+           WHERE student_id = ?
+           GROUP BY period_key
+         )
+       ORDER BY sort_order ASC, id ASC`,
+      [studentId, studentId]
+    )
+    manualRows = rows
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error
+  }
+
+  const sessionTotals = {
+    day: {},
+    week: {},
+    month: {},
+  }
+
+  sessionRows.forEach((row) => {
+    const startedAt = parseValidDate(row.started_at)
+    if (!startedAt) return
+
+    const rawDuration = Number(row.duration_sec || 0)
+    const endedAt = parseValidDate(row.ended_at)
+    const durationSec = rawDuration > 0
+      ? rawDuration
+      : endedAt
+        ? Math.max(0, Math.round((endedAt.getTime() - startedAt.getTime()) / 1000))
+        : 0
+    const hours = Math.round((durationSec / 3600) * 100) / 100
+    if (hours <= 0) return
+
+    const dayKey = formatDateKey(startedAt)
+    const weekKey = formatDateKey(getStartOfWeek(startedAt))
+    const monthKey = formatMonthKey(startedAt)
+    sessionTotals.day[dayKey] = (sessionTotals.day[dayKey] || 0) + hours
+    sessionTotals.week[weekKey] = (sessionTotals.week[weekKey] || 0) + hours
+    sessionTotals.month[monthKey] = (sessionTotals.month[monthKey] || 0) + hours
+  })
+
+  const manualRowsByKey = new Map(
+    manualRows
+      .map((row) => {
+        const key = String(row.key || '').trim()
+        const cycleType = ['day', 'week', 'month'].includes(row.cycleType) ? row.cycleType : 'week'
+        const sortOrder = Number(row.sortOrder || 0)
+        const hours = Number(row.hours)
+        if (!key || !Number.isFinite(hours)) {
+          return null
+        }
+
+        return [
+          key,
+          {
+            key,
+            label: String(row.label || '').trim() || key,
+            hours: Math.max(0, Math.round(hours * 100) / 100),
+            sortOrder,
+            cycleType,
+          },
+        ]
+      })
+      .filter(Boolean)
+  )
+
+  const bucketKeySet = new Set(allBuckets.map((bucket) => bucket.key))
+  const mergedRows = allBuckets.map((bucket) => {
+    const manualRow = manualRowsByKey.get(bucket.key)
+    const sessionHours = sessionTotals[bucket.cycleType][bucket.bucketKey] || 0
+    const manualHours = manualRow ? manualRow.hours : 0
+
+    return {
+      key: bucket.key,
+      label: manualRow && manualRow.label ? manualRow.label : bucket.label,
+      hours: Math.round((sessionHours + manualHours) * 100) / 100,
+      sortOrder: bucket.sortOrder,
+      cycleType: bucket.cycleType,
+    }
+  })
+
+  const extraManualRows = [...manualRowsByKey.values()]
+    .filter((row) => !bucketKeySet.has(row.key))
+    .sort((left, right) => {
+      if (left.cycleType !== right.cycleType) {
+        return `${left.cycleType}`.localeCompare(`${right.cycleType}`)
+      }
+      return Number(left.sortOrder || 0) - Number(right.sortOrder || 0)
+    })
+
+  return [...mergedRows, ...extraManualRows]
+}
+
 function getLateSessionScore(date) {
   const hours = date.getHours() + (date.getMinutes() / 60)
   return hours < 5 ? hours + 24 : hours
 }
 
-async function ensureTeacherCanAccessStudent(teacherId, studentId) {
+async function ensureTeacherCanAccessStudent(_teacherId, studentId) {
   const [[row]] = await pool.query(
-    'SELECT 1 AS ok FROM teacher_students WHERE teacher_id = ? AND student_id = ? LIMIT 1',
-    [teacherId, studentId]
+    'SELECT 1 AS ok FROM students WHERE id = ? LIMIT 1',
+    [studentId]
   )
   return Boolean(row)
 }
 
-async function loadLearningPathRows(studentId, pointName) {
-  const [rows] = await pool.query(
+async function loadLearningPathRows(studentId, pointName, executor = pool) {
+  const [rows] = await executor.query(
     `SELECT id, stage_key, task_id, is_done, meta_json, updated_at
      FROM student_learning_path_tasks
      WHERE student_id = ? AND point_name = ?
@@ -1542,6 +1775,55 @@ async function buildStudentLearningPath(studentId, pointName) {
     ...row,
     status: Number(row.is_done) ? 'done' : 'pending',
   })))
+}
+
+async function syncStudentCourseProgress(executor, studentId, pointName) {
+  const safePointName = normalizeCheckpointName(pointName)
+  const [[course]] = await executor.query(
+    `SELECT c.id
+     FROM student_courses sc
+     JOIN courses c ON c.id = sc.course_id
+     WHERE sc.student_id = ? AND c.name = ?
+     LIMIT 1`,
+    [studentId, safePointName]
+  )
+  if (!course) {
+    return null
+  }
+
+  const rows = await loadLearningPathRows(studentId, safePointName, executor)
+  const summary = summarizeLearningPathProgress(studentId, safePointName, rows.map((row) => ({
+    ...row,
+    status: Number(row.is_done) ? 'done' : 'pending',
+  })))
+  const courseStatus = summary.allDone ? 'completed' : 'in_progress'
+
+  await executor.query(
+    `UPDATE student_courses
+     SET progress = ?, status = ?
+     WHERE student_id = ? AND course_id = ?`,
+    [summary.progressPercent, courseStatus, studentId, course.id]
+  )
+
+  return {
+    progress: summary.progressPercent,
+    status: courseStatus,
+  }
+}
+
+async function syncAllStudentCourseProgress(executor, studentId) {
+  const [rows] = await executor.query(
+    `SELECT DISTINCT point_name
+     FROM student_learning_path_tasks
+     WHERE student_id = ?
+       AND point_name IS NOT NULL
+       AND point_name != ''`,
+    [studentId]
+  )
+
+  for (const row of rows) {
+    await syncStudentCourseProgress(executor, studentId, row.point_name)
+  }
 }
 
 async function saveLearningPathTask({
@@ -1600,6 +1882,8 @@ async function saveLearningPathTask({
     ]
   )
 
+  await syncStudentCourseProgress(executor, studentId, safePointName)
+
   return {
     pointName: safePointName,
     taskId,
@@ -1626,15 +1910,16 @@ async function getPointLearningSummary(studentId, pointName) {
     ? `SELECT started_at, ended_at, duration_sec
        FROM study_sessions
        WHERE student_id = ?
-         AND course_id = ?
+         AND (course_id = ? OR point_name = ?)
          AND started_at IS NOT NULL
          AND status IN ('started', 'completed')`
     : `SELECT started_at, ended_at, duration_sec
        FROM study_sessions
        WHERE student_id = ?
+         AND point_name = ?
          AND started_at IS NOT NULL
          AND status IN ('started', 'completed')`
-  const queryParams = courseId ? [studentId, courseId] : [studentId]
+  const queryParams = courseId ? [studentId, courseId, pointName] : [studentId, pointName]
   const [rows] = await pool.query(querySql, queryParams)
 
   let totalDurationSec = 0
@@ -1764,31 +2049,7 @@ async function getReviewOverviewForStudent(studentId) {
     if (!isMissingTableError(error)) throw error
   }
 
-  let studyTimes = []
-  try {
-    const [rows] = await pool.query(
-      `SELECT
-         period_key AS \'key\',
-         period_label AS label,
-         hours,
-         sort_order AS sortOrder,
-         cycle_type AS cycleType,
-         created_at AS updatedAt
-       FROM study_time_stats
-       WHERE student_id = ?
-         AND id IN (
-           SELECT MAX(id)
-           FROM study_time_stats
-           WHERE student_id = ?
-           GROUP BY period_key
-         )
-       ORDER BY sort_order ASC, id ASC`,
-      [studentId, studentId]
-    )
-    studyTimes = rows
-  } catch (error) {
-    if (!isMissingTableError(error)) throw error
-  }
+  const studyTimes = await buildStudyTimesFromSessions(studentId)
 
   const pointStatuses = await getReviewPointStatusesForStudent(studentId)
 
@@ -1800,7 +2061,9 @@ async function getReviewOverviewForStudent(studentId) {
         : '',
     progress: {
       entryScore: firstDiagnosis ? firstDiagnosis.diagnosis_score : null,
-      currentScore: latestDiagnosis ? latestDiagnosis.diagnosis_score : null,
+      currentScore: latestDiagnosis && firstDiagnosis && latestDiagnosis.id !== firstDiagnosis.id
+        ? latestDiagnosis.diagnosis_score
+        : null,
       targetScore: latestDiagnosis
         ? latestDiagnosis.target_score
         : firstDiagnosis
@@ -2071,16 +2334,17 @@ router.get('/students/:studentId/info', async (req, res) => {
   const { studentId } = req.params
   const teacherId = req.user.id
   try {
+    await syncAllStudentCourseProgress(pool, Number(studentId))
+
     const [[student]] = await pool.query(
       `SELECT s.id, s.name, s.status, s.created_at,
               sp.gender, sp.grade AS profile_grade, sp.hometown, sp.exam_status, sp.exam_date,
               sp.education, sp.major, sp.avatar_url
        FROM students s
-       JOIN teacher_students ts ON ts.student_id = s.id AND ts.teacher_id = ?
        LEFT JOIN student_profiles sp ON sp.student_id = s.id
        WHERE s.id = ?
        LIMIT 1`,
-      [teacherId, studentId]
+      [studentId]
     )
     if (!student) return res.status(404).json({ message: '????' })
     const [notes] = await pool.query(
@@ -2101,14 +2365,18 @@ router.get('/students/:studentId/info', async (req, res) => {
       `SELECT COUNT(*) AS session_count,
               COALESCE(SUM(
                 CASE
-                  WHEN start_time IS NOT NULL AND end_time IS NOT NULL
-                  THEN TIME_TO_SEC(TIMEDIFF(end_time, start_time))
+                  WHEN duration_sec IS NOT NULL AND duration_sec > 0
+                  THEN duration_sec
+                  WHEN started_at IS NOT NULL AND ended_at IS NOT NULL
+                  THEN TIMESTAMPDIFF(SECOND, started_at, ended_at)
                   ELSE 0
                 END
               ) / 3600, 0) AS total_hours
-       FROM calendar_events
-       WHERE teacher_id = ? AND student_id = ?`,
-      [teacherId, studentId]
+       FROM study_sessions
+       WHERE student_id = ?
+         AND started_at IS NOT NULL
+         AND status IN ('started', 'completed')`,
+      [studentId]
     )
     const [teamTeachers] = await pool.query(
       `SELECT t.id, t.name, t.title, stm.role, stm.status
@@ -2318,8 +2586,10 @@ router.post('/materials/handout', uploadMaterial.single('file'), async (req, res
 // 闂傚倸鍊搁崐鎼佸磹閹间礁纾圭€瑰嫭鍣磋ぐ鎺戠倞妞ゆ帒顦伴弲顏堟偡濠婂啰效婵犫偓娓氣偓濮婅櫣绱掑Ο铏逛紘濠碘槅鍋勭€氼喚鍒掓繝姘亹缂備焦顭囬崢鐢告⒑绾拋娼愰柛鏃撶畵瀹曢潧鈻庨幘鏉戔偓鍨叏濮楀棗澧绘俊鎻掔秺閺屾洟宕惰椤忣厽顨ラ悙鏉戞诞妤犵偛顑呴埞鎴﹀箛椤忓懎浜濋梻鍌氬€烽悞锕傚箖閸洖绀夌€光偓閸曨偆锛欓悷婊呭鐢帞绮婚悙鐑樼厪濠电偛鐏濋崜濠氭煟閺冨偆鐒剧紒鍓佸仧缁辨帞鈧綆鍋勯婊堟煕鎼淬垺灏电紒杈ㄦ尰閹峰懘宕崟顏勵棜闂備胶顭堢€涒晜绻涙繝鍐х箚闁割偅娲栫粻鐟懊归敐鍡欐憙闁硅姤娲栭埞鎴︽倷閺夋垹浠ч梺鎼炲妼濠€杈╁垝鐠囨祴妲堥柕蹇娾偓鏂ュ亾閸洘鐓熼柟閭﹀灡绾墽鎮鑸碘拺闂傚牃鏅濈粔顒€鈹戦鍝勨偓鏍矚鏉堛劎绡€闁搞儜鍛幀濠电姰鍨煎▔娑㈡晝閿旇棄顕遍悘鐐缎掗弨鑺ャ亜閺冨倶鈧寮ㄧ紒妯圭箚闁绘劘鍩栭ˉ澶愭煟閿濆洤鍘村┑鈩冩倐閺佸倿宕滆濡插洭姊绘担渚劸闁哄牜鍓涢崚鎺撴償閵娿儳鐤囬梺绯曞墲椤洨寮ч埀顒傜磼閸撗冾暭閽冭鲸銇勯顫含闁哄本绋撻埀顒婄秵娴滄繈宕虫禒瀣厵妤犵偛鐏濋悘鑼偓瑙勬礈閸樠囧煘閹达箑閱囬柣鏂垮閸熷酣姊婚崒娆戠獢婵炰匠鍛床闁割偁鍎辩壕褰掓煛閸モ晛浠︾紒缁㈠灦濮婂宕掑▎鎺戝帯缂佺虎鍘奸悥鐓庣暦濠婂啠鏀介悗锝庡亜娴狀厼顪冮妶鍡欏妞ゆ洏鍨奸妵鎰板箳閹寸媭妲规俊鐐€栭悧妤冪矙閹捐鍌ㄥù鐘差儐閳锋垹绱撴担鍏夋（妞ゅ繐瀚烽崵鏇㈡煠閹间焦娑х紒鍓佸仱閺屾盯寮撮妸銉ョ闂佸摜濮甸崝娆撳蓟閳╁啫绶炲┑鐘插閾忓酣姊洪崫鍕紨缂傚秳绶氬?
 // ??????????????
 router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
-  const taskId = Number(String(req.params.taskId).replace(/^assign_/, ''))
-  if (!taskId) return res.status(400).json({ message: '????' })
+  const rawTaskId = String(req.params.taskId || '').replace(/^assign_/, '')
+  const virtualStudentId = rawTaskId.startsWith('student_') ? Number(rawTaskId.replace(/^student_/, '')) : 0
+  const taskId = virtualStudentId ? 0 : Number(rawTaskId)
+  if (!taskId && !virtualStudentId) return res.status(400).json({ message: '????' })
 
   const checkpointName = normalizeCheckpointName(req.body.checkpointName || req.body.checkpoint || '')
   if (!checkpointName) return res.status(400).json({ message: '????' })
@@ -2403,13 +2673,21 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
     conn = await pool.getConnection()
     await conn.beginTransaction()
 
-    const [[taskRow]] = await conn.query(
-      `SELECT id, student_id
-       FROM practice_assignment_tasks
-       WHERE id = ? AND teacher_id = ?
-       LIMIT 1`,
-      [taskId, req.user.id],
-    )
+    const [[taskRow]] = taskId
+      ? await conn.query(
+          `SELECT id, student_id
+           FROM practice_assignment_tasks
+           WHERE id = ? AND status = 'pending'
+           LIMIT 1`,
+          [taskId],
+        )
+      : await conn.query(
+          `SELECT NULL AS id, id AS student_id
+           FROM students
+           WHERE id = ?
+           LIMIT 1`,
+          [virtualStudentId],
+        )
 
     if (!taskRow) {
       return res.status(404).json({ message: '????' })
@@ -2456,7 +2734,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
     }
 
     await ensureTeacherStudentRelation(conn, selectedTeacher.id, studentId)
-    await ensureStudentCourseEnrollment(conn, req.user.id, studentId, checkpointName, theoryLessons)
+    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, theoryLessons)
     await ensureChatRoom(conn, selectedTeacher.id, studentId)
     await conn.query(
       `INSERT INTO student_team_members (student_id, teacher_id, role, status)
@@ -2491,8 +2769,8 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
     await conn.query(
       `UPDATE practice_assignment_tasks
        SET checkpoint = ?, detail = ?, status = 'assigned', assigned_at = NOW()
-       WHERE id = ? AND teacher_id = ?`,
-      [checkpointName, detail, taskId, req.user.id],
+       WHERE student_id = ?`,
+      [checkpointName, detail, studentId],
     )
 
     await conn.commit()
@@ -2506,15 +2784,18 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
 })
 
 router.post('/practice-assignment-tasks/:taskId/complete', async (req, res) => {
-  const taskId = Number(String(req.params.taskId).replace(/^assign_/, ''))
-  if (!taskId) return res.status(400).json({ message: '????' })
+  const rawTaskId = String(req.params.taskId || '').replace(/^assign_/, '')
+  const virtualStudentId = rawTaskId.startsWith('student_') ? Number(rawTaskId.replace(/^student_/, '')) : 0
+  const taskId = virtualStudentId ? 0 : Number(rawTaskId)
+  if (!taskId && !virtualStudentId) return res.status(400).json({ message: '????' })
+  if (virtualStudentId) return res.json({ message: '????' })
 
   try {
     const [result] = await pool.query(
       `UPDATE practice_assignment_tasks
        SET status = 'assigned', assigned_at = NOW()
-       WHERE id = ? AND teacher_id = ? AND status = 'pending'`,
-      [taskId, req.user.id],
+       WHERE id = ? AND status = 'pending'`,
+      [taskId],
     )
     if (result.affectedRows === 0) return res.status(404).json({ message: '????' })
     res.json({ message: '????' })
@@ -2573,10 +2854,45 @@ router.delete('/contact-notes/:noteId', async (req, res) => {
   }
 })
 
+// 获取所有课程列表（用于分配课程弹窗）
+router.get('/courses', async (req, res) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT id, name, subject, description FROM courses WHERE is_active = 1 ORDER BY subject, name'
+    )
+    res.json(rows)
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// 给学生分配课程
+router.post('/students/:studentId/courses', async (req, res) => {
+  const { studentId } = req.params
+  const { courseId } = req.body
+  if (!courseId) return res.status(400).json({ message: '缺少 courseId' })
+  try {
+    const [[course]] = await pool.query('SELECT id FROM courses WHERE id = ? AND is_active = 1', [courseId])
+    if (!course) return res.status(404).json({ message: '课程不存在' })
+    await pool.query(
+      `INSERT INTO student_courses (student_id, course_id, progress, status)
+       VALUES (?, ?, 0, 'in_progress')
+       ON DUPLICATE KEY UPDATE status = IF(status = 'failed', 'in_progress', status)`,
+      [studentId, courseId]
+    )
+    res.json({ message: '分配成功' })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+router.get('/list', async (req, res) => {
+  try {
+    const [rows] = await pool.query('SELECT id, name, title FROM teachers ORDER BY id ASC')
+    res.json({ list: rows.map((r) => ({ id: String(r.id), name: r.name, title: r.title ?? '' })) })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
 module.exports = router
-
-
-
-
-
-

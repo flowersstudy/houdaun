@@ -11,12 +11,9 @@ const {
   isUploadTask,
   readMeta,
 } = require('../lib/learningPath')
-
-const DEFAULT_UPLOADS_DIR = path.join(__dirname, '../../uploads')
-const UPLOADS_DIR = process.env.UPLOADS_DIR
-  ? path.resolve(process.env.UPLOADS_DIR)
-  : DEFAULT_UPLOADS_DIR
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true })
+const { normalizeCheckpointName } = require('../lib/checkpoint')
+const { UPLOADS_DIR } = require('../lib/uploads')
+const { sendGradeNotification } = require('../lib/wxSubscribe')
 
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -29,32 +26,6 @@ const upload = multer({
   storage,
   limits: { fileSize: 50 * 1024 * 1024 },
 })
-
-const CHECKPOINT_NAME_ALIASES = [
-  ['英语提分冲刺班', '要点不全不准'],
-  ['英语阅读精练班', '提炼转述困难'],
-  ['数学压轴突破班', '对策推导困难'],
-  ['数学基础巩固班', '公文结构不清'],
-  ['语文写作提升班', '作文立意不准'],
-  ['阅读定位', '要点不全不准'],
-  ['阅读理解', '要点不全不准'],
-  ['主旨题', '提炼转述困难'],
-  ['阅读专项', '提炼转述困难'],
-  ['数列综合', '对策推导困难'],
-  ['数学压轴突破', '对策推导困难'],
-  ['函数讨论', '分析结构不清'],
-  ['书面表达', '作文表达不畅'],
-  ['议论文结构', '作文论证不清'],
-  ['函数基础', '公文结构不清'],
-  ['计算规范', '作文表达不畅'],
-]
-
-function normalizeCheckpointName(value) {
-  const source = String(value || '').trim()
-  if (!source) return ''
-
-  return CHECKPOINT_NAME_ALIASES.reduce((result, [from, to]) => result.replaceAll(from, to), source)
-}
 
 function cleanMetaPatch(patch = {}) {
   return Object.keys(patch).reduce((result, key) => {
@@ -381,11 +352,14 @@ router.put('/:id/grade', auth('teacher'), async (req, res) => {
     const [[row]] = await pool.query(
       `SELECT ps.id, ps.student_id, ps.student_name, ps.review_type, ps.checkpoint, ps.file_name,
               ps.point_name, ps.stage_key, ps.task_id, ps.feedback_task_id,
-              ps.reviewed_file_name, ps.reviewed_stored_file
+              ps.reviewed_file_name, ps.reviewed_stored_file,
+              s.openid AS student_openid,
+              ts_rel.subject AS course_name
        FROM pdf_submissions ps
-       JOIN teacher_students ts ON ts.student_id = ps.student_id
-       WHERE ps.id = ? AND ts.teacher_id = ?`,
-      [req.params.id, req.user.id]
+       JOIN teacher_students ts_rel ON ts_rel.student_id = ps.student_id AND ts_rel.teacher_id = ?
+       JOIN students s ON s.id = ps.student_id
+       WHERE ps.id = ?`,
+      [req.user.id, req.params.id]
     )
     if (!row) return res.status(404).json({ error: '提交记录不存在' })
     await pool.query(
@@ -420,6 +394,15 @@ router.put('/:id/grade', auth('teacher'), async (req, res) => {
     }
 
     res.json({ ok: true })
+
+    // 批改完成后异步发送订阅消息，不阻塞响应
+    sendGradeNotification(row.student_openid, {
+      studentName: row.student_name,
+      courseName: row.course_name || row.checkpoint || row.review_type,
+      taskTitle: row.file_name,
+      score: score ?? null,
+      page: `/pages/results/results?id=${row.id}`,
+    }).catch((err) => console.error('[wxSubscribe] 发送异常:', err.message))
   } catch (err) {
     res.status(500).json({ error: err.message })
   }

@@ -59,6 +59,35 @@ function normalizeStudentPassword(value) {
   return String(value || '')
 }
 
+async function ensureStudentVisibleForTeachers(studentId) {
+  const safeStudentId = Number(studentId)
+  if (!safeStudentId) {
+    return
+  }
+
+  await pool.query(
+    `INSERT INTO teacher_students (teacher_id, student_id, subject, grade)
+     SELECT t.id, ?, '申论', NULL
+     FROM teachers t
+     LEFT JOIN teacher_students ts
+       ON ts.teacher_id = t.id
+      AND ts.student_id = ?
+     WHERE ts.id IS NULL`,
+    [safeStudentId, safeStudentId]
+  )
+
+  await pool.query(
+    `INSERT INTO practice_assignment_tasks (teacher_id, student_id, checkpoint, detail, status)
+     SELECT t.id, ?, NULL, '待分配学习方案', 'pending'
+     FROM teachers t
+     LEFT JOIN practice_assignment_tasks pat
+       ON pat.teacher_id = t.id
+      AND pat.student_id = ?
+     WHERE pat.id IS NULL`,
+    [safeStudentId, safeStudentId]
+  )
+}
+
 function canUseDevWxFallback() {
   return process.env.NODE_ENV !== 'production'
 }
@@ -224,6 +253,8 @@ router.post('/student/login', async (req, res) => {
       return res.status(401).json({ message: '账号或密码错误' })
     }
 
+    await ensureStudentVisibleForTeachers(student.id)
+
     res.json(buildStudentAuthPayload(student))
   } catch (error) {
     res.status(500).json({ message: '服务器错误', error: error.message })
@@ -263,6 +294,8 @@ router.post('/student/register', async (req, res) => {
        VALUES (?, ?, ?, 'new')`,
       [account, passwordHash, name]
     )
+
+    await ensureStudentVisibleForTeachers(result.insertId)
 
     res.json(buildStudentAuthPayload(await getStudentAuthRecordById(result.insertId)))
   } catch (error) {
@@ -411,6 +444,8 @@ router.post('/student/dev-login', async (req, res) => {
     if (!student) {
       return res.status(404).json({ message: '学生不存在' })
     }
+
+    await ensureStudentVisibleForTeachers(student.id)
 
     res.json(buildStudentAuthPayload(student))
   } catch (error) {

@@ -61,45 +61,58 @@ function buildDynamicTheoryDefinition(stateRows = []) {
       questionTitle: lesson.noteText || lesson.title || lesson.knowledgeTitle || lesson.scope,
     }
 
+    const items = []
+
+    if (lesson.preClassUrl) {
+      items.push({
+        id: `theory_round_${roundNumber}_handout`,
+        title: '课前讲义',
+        desc: `${roundLabel}下载课前讲义 PDF。`,
+        actionText: '查看讲义',
+        actionType: 'document',
+        resource: buildResource('pdf', `${titlePrefix}课前讲义`, lesson.preClassUrl),
+      })
+    }
+
+    if (lesson.videoId) {
+      items.push({
+        id: `theory_round_${roundNumber}_recorded`,
+        title: '理论课',
+        desc: `${roundLabel}观看理论课录播，返回后可选星级评价。`,
+        actionText: '看录播',
+        actionType: 'video',
+        secondaryActionText: '找老师',
+        secondaryActionType: 'askTeacher',
+        resource: buildResource('video', titlePrefix, '', lesson.videoId),
+        lessonContext,
+      })
+    }
+
+    if (lesson.analysisUrl || lesson.preClassUrl) {
+      items.push({
+        id: `theory_round_${roundNumber}_homework_pdf`,
+        title: '课后作业',
+        desc: `${roundLabel}下载课后作业 PDF。`,
+        actionText: '下载作业',
+        actionType: 'document',
+        resource: buildResource('pdf', `${titlePrefix}课后作业`, lesson.analysisUrl || lesson.preClassUrl),
+      })
+    }
+
+    if (lesson.videoId) {
+      items.push({
+        id: `theory_round_${roundNumber}_explain_video`,
+        title: '视频讲解',
+        desc: `${roundLabel}观看视频讲解，返回后可选星级评价。`,
+        actionText: '看讲解',
+        actionType: 'video',
+        resource: buildResource('video', `${titlePrefix}视频讲解`, '', lesson.videoId),
+      })
+    }
+
     return {
       title: roundLabel,
-      items: [
-        {
-          id: `theory_round_${roundNumber}_handout`,
-          title: '课前讲义',
-          desc: `${roundLabel}下载课前讲义 PDF。`,
-          actionText: '查看讲义',
-          actionType: 'document',
-          resource: buildResource('pdf', `${titlePrefix}课前讲义`, lesson.preClassUrl),
-        },
-        {
-          id: `theory_round_${roundNumber}_recorded`,
-          title: '理论课',
-          desc: `${roundLabel}观看理论课录播，返回后可选星级评价。`,
-          actionText: '看录播',
-          actionType: 'video',
-          secondaryActionText: '找老师',
-          secondaryActionType: 'askTeacher',
-          resource: buildResource('video', titlePrefix, '', lesson.videoId),
-          lessonContext,
-        },
-        {
-          id: `theory_round_${roundNumber}_homework_pdf`,
-          title: '课后作业',
-          desc: `${roundLabel}下载课后作业 PDF。`,
-          actionText: '下载作业',
-          actionType: 'document',
-          resource: buildResource('pdf', `${titlePrefix}课后作业`, lesson.analysisUrl || lesson.preClassUrl),
-        },
-        {
-          id: `theory_round_${roundNumber}_explain_video`,
-          title: '视频讲解',
-          desc: `${roundLabel}观看视频讲解，返回后可选星级评价。`,
-          actionText: '看讲解',
-          actionType: 'video',
-          resource: buildResource('video', `${titlePrefix}视频讲解`, '', lesson.videoId),
-        },
-      ],
+      items,
     }
   })
 
@@ -148,17 +161,21 @@ function buildDynamicAssignmentStageItems(stageKey, items = [], label = '') {
     const itemIndex = index + 1
     const baseTitle = resolveAssignmentResourceTitle(item, `${label}${itemIndex}`)
     const taskPrefix = `${stageKey}_${itemIndex}`
+    const nextItems = []
 
-    return [
-      {
+    if (item.preClassUrl) {
+      nextItems.push({
         id: `${taskPrefix}_reading`,
         title: '?? PDF',
         desc: `???${baseTitle}??? PDF?`,
         actionText: '????',
         actionType: 'document',
         resource: buildResource('pdf', `${baseTitle} ? ?? PDF`, item.preClassUrl),
-      },
-      {
+      })
+    }
+
+    if (item.videoId) {
+      nextItems.push({
         id: `${taskPrefix}_video`,
         title: '????',
         desc: `???${baseTitle}??????`,
@@ -167,16 +184,21 @@ function buildDynamicAssignmentStageItems(stageKey, items = [], label = '') {
         secondaryActionText: '???',
         secondaryActionType: 'askTeacher',
         resource: buildResource('video', `${baseTitle} ? ????`, '', item.videoId),
-      },
-      {
+      })
+    }
+
+    if (item.analysisUrl) {
+      nextItems.push({
         id: `${taskPrefix}_analysis`,
         title: '?? PDF',
         desc: `???${baseTitle}??? PDF?`,
         actionText: '????',
         actionType: 'document',
         resource: buildResource('pdf', `${baseTitle} ? ?? PDF`, item.analysisUrl),
-      },
-    ]
+      })
+    }
+
+    return nextItems
   })
 }
 
@@ -570,6 +592,27 @@ function buildLearningPathPayload(studentId, pointName, stateRows = []) {
   }
 }
 
+function summarizeLearningPathProgress(studentId, pointName, stateRows = []) {
+  const stages = STAGE_ORDER.map((stageKey) => buildStage(stageKey, pointName, stateRows))
+  const items = stages.flatMap((stage) => stage.groups.flatMap((group) => group.items || []))
+  const totalTaskCount = items.length
+  const doneTaskCount = items.filter((item) => item.status === 'done').length
+  const currentTask = items.find((item) => item.status === 'current') || null
+  const progressPercent = totalTaskCount > 0
+    ? Math.round((doneTaskCount / totalTaskCount) * 100)
+    : 0
+
+  return {
+    studentId: String(studentId),
+    pointName,
+    totalTaskCount,
+    doneTaskCount,
+    progressPercent,
+    currentTaskId: currentTask ? String(currentTask.id || currentTask.taskId || '') : '',
+    allDone: totalTaskCount > 0 && doneTaskCount >= totalTaskCount,
+  }
+}
+
 function findTaskDefinition(stageKey, taskId, stateRows = []) {
   const definition = getStageDefinition(stageKey, stateRows)
   if (!definition || !taskId) return null
@@ -652,6 +695,7 @@ module.exports = {
   STAGE_DEFINITIONS,
   STAGE_ORDER,
   buildLearningPathPayload,
+  summarizeLearningPathProgress,
   flattenStageTasks,
   getFeedbackTaskIdForUploadTask,
   getPreviousTaskIds,

@@ -1,0 +1,319 @@
+{
+  "exportedAt": "2026-04-21T01:56:23.292Z",
+  "teachers": [
+    {
+      "id": 1,
+      "name": "李老师",
+      "email": "li@test.com",
+      "password_hash": "$2a$10$7JrJAauxS1RzXrb4RsmPgel2CjFNFj6q4LoGsan6eUshDWmyQEiPm",
+      "title": "带教老师",
+      "created_at": "2026-04-02T09:45:54.000Z"
+    },
+    {
+      "id": 3,
+      "name": "123",
+      "email": "1501232462@qq.com",
+      "password_hash": "$2a$10$Vj5rxRj8l.Igi.CdndqVJuyYh1w.DlKYzBDVLHLd72fklFxBg2Tj.",
+      "title": null,
+      "created_at": "2026-04-06T01:12:49.000Z"
+    },
+    {
+      "id": 5,
+      "name": "王老师",
+      "email": "wang@test.com",
+      "password_hash": "$2a$10$7JrJAauxS1RzXrb4RsmPgel2CjFNFj6q4LoGsan6eUshDWmyQEiPm",
+      "title": "诊断老师",
+      "created_at": "2026-04-07T05:44:56.000Z"
+    },
+    {
+      "id": 6,
+      "name": "陈老师",
+      "email": "chen@test.com",
+      "password_hash": "$2a$10$7JrJAauxS1RzXrb4RsmPgel2CjFNFj6q4LoGsan6eUshDWmyQEiPm",
+      "title": "教务老师",
+      "created_at": "2026-04-07T05:44:56.000Z"
+    },
+    {
+      "id": 7,
+      "name": "林老师",
+      "email": "lin@test.com",
+      "password_hash": "$2a$10$7JrJAauxS1RzXrb4RsmPgel2CjFNFj6q4LoGsan6eUshDWmyQEiPm",
+      "title": "助教老师",
+      "created_at": "2026-04-07T05:44:56.000Z"
+    },
+    {
+      "id": 8,
+      "name": "刘老师",
+      "email": "liu@test.com",
+      "password_hash": "$2a$10$7JrJAauxS1RzXrb4RsmPgel2CjFNFj6q4LoGsan6eUshDWmyQEiPm",
+      "title": "校长老师",
+      "created_at": "2026-04-07T05:44:56.000Z"
+    },
+    {
+      "id": 9,
+      "name": "????20260407142217",
+      "email": "api_20260407142217@test.com",
+      "password_hash": "$2a$10$zi1/Pmv7XzpkpVft3SQRSefzjsTPD44PjEwqNTHGSfUPuJhC/NYQ6",
+      "title": null,
+      "created_at": "2026-04-07T06:22:17.000Z"
+    },
+    {
+      "id": 15,
+      "name": "Teacher Demo",
+      "email": "realtime.teacher@test.com",
+      "password_hash": "$2a$10$1Jtu2sRFavlgNi2GCrPgH.1Lx9s/gb1VYpYf307NCsS1oTsp3MOdu",
+      "title": "Realtime Coach",
+      "created_at": "2026-04-13T08:37:05.000Z"
+    },
+    {
+      "id": 72,
+      "name": "AutoTest",
+      "email": "autotest_1776693475921@test.com",
+      "password_hash": "$2a$10$Ce6nFWvIwkeVfnG5TOB30Ox8BgEq55ko1qe8VsbTijBj.3XuyOf7O",
+      "title": null,
+      "created_at": "2026-04-20T13:57:55.000Z"
+    },
+    {
+      "id": 73,
+      "name": "AutoTest2",
+      "email": "autotest_1776693599670@test.com",
+      "password_hash": "$2a$10$COoUEIPNdapdVR8bSs0nAeE4v5ozYI.Livg3dIuon2f2qUKnHloI6",
+      "title": null,
+      "created_at": "2026-04-20T13:59:59.000Z"
+    },
+    {
+      "id": 74,
+      "name": "AutoTest3",
+      "email": "autotest_1776694159090@test.com",
+      "password_hash": "$2a$10$i6eH3C9TM.J7ELDtrk/h9u4aMDPa4OOvnXLfOT6RL398xgfgoaQO2",
+      "title": null,
+      "created_at": "2026-04-20T14:09:19.000Z"
+    },
+    {
+      "id": 75,
+      "name": "AutoTest4",
+      "email": "autotest_1776694189518@test.com",
+      "password_hash": "$2a$10$IaTqU4YUa2aiCjy4p.DmiuNY/EshWIPqRfCbloa6kYv.zUrK8k3ga",
+      "title": null,
+      "created_at": "2026-04-20T14:09:49.000Z"
+    }
+  ],
+  "students": [
+    {
+      "id": 67,
+      "openid": "dev_wx_59f4413f543e2daddce3ade0",
+      "account": null,
+      "phone": "15197073082",
+      "password_hash": null,
+      "name": "小周",
+      "status": "normal",
+      "created_at": "2026-04-14T05:59:54.000Z"
+    },
+    {
+      "id": 80,
+      "openid": "dev_wx_9e2d3563c4383c0c125dec38",
+      "account": null,
+      "phone": "13800000001",
+      "password_hash": null,
+      "name": "张晨",
+      "status": "normal",
+      "created_at": "2026-04-17T03:09:25.000Z"
+    },
+    {
+      "id": 81,
+      "openid": "dev_openid_002",
+      "account": null,
+      "phone": "13800000002",
+      "password_hash": null,
+      "name": "李悦",
+      "status": "new",
+      "created_at": "2026-04-17T03:09:25.000Z"
+    },
+    {
+      "id": 82,
+      "openid": "dev_openid_003",
+      "account": null,
+      "phone": "13800000003",
+      "password_hash": null,
+      "name": "王浩",
+      "status": "normal",
+      "created_at": "2026-04-17T03:09:25.000Z"
+    },
+    {
+      "id": 83,
+      "openid": "dev_openid_004",
+      "account": null,
+      "phone": "13800000004",
+      "password_hash": null,
+      "name": "陈雪",
+      "status": "normal",
+      "created_at": "2026-04-17T03:09:25.000Z"
+    },
+    {
+      "id": 84,
+      "openid": "dev_openid_005",
+      "account": null,
+      "phone": "13800000005",
+      "password_hash": null,
+      "name": "赵磊",
+      "status": "normal",
+      "created_at": "2026-04-17T03:09:25.000Z"
+    },
+    {
+      "id": 115,
+      "openid": "dev_openid_006",
+      "account": "12345678901",
+      "phone": "12345678901",
+      "password_hash": "$2a$10$Y3rSgOiZqgp3X4VWOjjVG.mP1YpfF2HmKdyu9W77.YrOMZe52Y2HO",
+      "name": "小yo的学员",
+      "status": "normal",
+      "created_at": "2026-04-18T13:20:51.000Z"
+    },
+    {
+      "id": 131,
+      "openid": null,
+      "account": "12345678",
+      "phone": null,
+      "password_hash": "$2a$10$/9fXXyQSjytq44hQdOahB.3MptAOh3xrQx4hdX8vPUeOTjdyuZNWi",
+      "name": "12345678",
+      "status": "new",
+      "created_at": "2026-04-20T10:53:54.000Z"
+    },
+    {
+      "id": 132,
+      "openid": null,
+      "account": "Rotation579",
+      "phone": "15111273596",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "en（思宇）",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 133,
+      "openid": null,
+      "account": "yl2011316",
+      "phone": "15116160576",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "黄金",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 134,
+      "openid": null,
+      "account": "S2022503",
+      "phone": "15869915192",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "张舒",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 135,
+      "openid": null,
+      "account": "wyr11334422",
+      "phone": "17712890809",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "王悦",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 136,
+      "openid": null,
+      "account": "hzy18815175175",
+      "phone": "18815175175",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "胡志煜",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 137,
+      "openid": null,
+      "account": "QT_XZzz",
+      "phone": "13757813277",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "哈哈",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 138,
+      "openid": null,
+      "account": null,
+      "phone": "18665243042",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "李旭",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 139,
+      "openid": null,
+      "account": "bamboo_hzj",
+      "phone": "15974490591",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "韩",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 140,
+      "openid": null,
+      "account": "wxid_n4xoaeblu5bd22",
+      "phone": "13574860517",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "Nancy",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 141,
+      "openid": null,
+      "account": "yangjinchundexiaokea",
+      "phone": "13272470700",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "蜀",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    },
+    {
+      "id": 142,
+      "openid": null,
+      "account": "tfzyal1115",
+      "phone": "16673232569",
+      "password_hash": "$2a$10$U6afMgTj1Em9THB9uznHB.rbbPu.KB2sHTDHOJ9MQR.z.iZiQGYku",
+      "name": "清枫",
+      "status": "normal",
+      "created_at": "2026-04-20T12:29:40.000Z"
+    }
+  ],
+  "studentProfiles": [
+    {
+      "student_id": 67,
+      "gender": "other",
+      "grade": null,
+      "hometown": null,
+      "exam_status": null,
+      "exam_date": null,
+      "education": null,
+      "major": null,
+      "avatar_url": "/assets/avatars/avatar-03.png",
+      "updated_at": "2026-04-20T10:56:03.000Z"
+    },
+    {
+      "student_id": 80,
+      "gender": "male",
+      "grade": "2026届",
+      "hometown": "杭州",
+      "exam_status": "准备首考",
+      "exam_date": "2026-04-28T16:00:00.000Z",
+      "education": "高中",
+      "major": "理科方向",
+      "avatar_url": "",
+      "updated_at": "2026-04-17T03:09:25.000Z"
+    }
+  ]
+}

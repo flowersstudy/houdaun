@@ -13,6 +13,7 @@ const {
   isFeedbackTask,
   isUploadTask,
   readMeta,
+  summarizeLearningPathProgress,
 } = require('../lib/learningPath')
 const {
   ensureStudentFeedbackTable,
@@ -21,37 +22,15 @@ const {
   sanitizeFeedbackSource,
   upsertRatingFeedback,
 } = require('../lib/studentFeedback')
+const { normalizeCheckpointName } = require('../lib/checkpoint')
+const { UPLOADS_DIR } = require('../lib/uploads')
 
 router.use(auth('student'))
-
-const DEFAULT_UPLOADS_DIR = path.join(__dirname, '../../uploads')
-const UPLOADS_DIR = process.env.UPLOADS_DIR
-  ? path.resolve(process.env.UPLOADS_DIR)
-  : DEFAULT_UPLOADS_DIR
 
 const POLYV_PLAY_AUTH_URL = String(process.env.POLYV_PLAY_AUTH_URL || 'https://api.yaotia.cn/web/polyv/getToken').trim()
 const POLYV_PLAY_AUTH_METHOD = String(process.env.POLYV_PLAY_AUTH_METHOD || 'GET').trim().toUpperCase()
 const POLYV_USER_ID = String(process.env.POLYV_USER_ID || '').trim()
 const POLYV_SECRET_KEY = String(process.env.POLYV_SECRET_KEY || '').trim()
-
-const CHECKPOINT_NAME_ALIASES = [
-  ['\u82f1\u8bed\u63d0\u5206\u51b2\u523a\u73ed', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u82f1\u8bed\u9605\u8bfb\u7cbe\u7ec3\u73ed', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u6570\u5b66\u538b\u8f74\u7a81\u7834\u73ed', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u6570\u5b66\u57fa\u7840\u5de9\u56fa\u73ed', '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u8bed\u6587\u5199\u4f5c\u63d0\u5347\u73ed', '\u4f5c\u6587\u7acb\u610f\u4e0d\u51c6'],
-  ['\u9605\u8bfb\u5b9a\u4f4d', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u9605\u8bfb\u7406\u89e3', '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6'],
-  ['\u4e3b\u65e8\u9898', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u9605\u8bfb\u4e13\u9879', '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be'],
-  ['\u6570\u5217\u7efc\u5408', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u6570\u5b66\u538b\u8f74\u7a81\u7834', '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be'],
-  ['\u51fd\u6570\u8ba8\u8bba', '\u5206\u6790\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u4e66\u9762\u8868\u8fbe', '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545'],
-  ['\u8bae\u8bba\u6587\u7ed3\u6784', '\u4f5c\u6587\u8bba\u8bc1\u4e0d\u6e05'],
-  ['\u51fd\u6570\u57fa\u7840', '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05'],
-  ['\u8ba1\u7b97\u89c4\u8303', '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545'],
-]
 
 const REVIEW_POINT_LIST = [
   { id: 1, pointName: '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6' },
@@ -242,8 +221,8 @@ function mergeLearningPathMeta(previousMeta = {}, patch = {}) {
   return nextMeta
 }
 
-async function loadLearningPathRows(studentId, pointName) {
-  const [rows] = await pool.query(
+async function loadLearningPathRows(studentId, pointName, executor = pool) {
+  const [rows] = await executor.query(
     `SELECT id, stage_key, task_id, is_done, meta_json, updated_at
      FROM student_learning_path_tasks
      WHERE student_id = ? AND point_name = ?
@@ -260,6 +239,55 @@ async function buildStudentLearningPath(studentId, pointName) {
     ...row,
     status: Number(row.is_done) ? 'done' : 'pending',
   })))
+}
+
+async function syncStudentCourseProgress(studentId, pointName, executor = pool) {
+  const safePointName = normalizeCheckpointName(pointName)
+  const [[course]] = await executor.query(
+    `SELECT c.id
+     FROM student_courses sc
+     JOIN courses c ON c.id = sc.course_id
+     WHERE sc.student_id = ? AND c.name = ?
+     LIMIT 1`,
+    [studentId, safePointName]
+  )
+  if (!course) {
+    return null
+  }
+
+  const rows = await loadLearningPathRows(studentId, safePointName, executor)
+  const summary = summarizeLearningPathProgress(studentId, safePointName, rows.map((row) => ({
+    ...row,
+    status: Number(row.is_done) ? 'done' : 'pending',
+  })))
+  const courseStatus = summary.allDone ? 'completed' : 'in_progress'
+
+  await executor.query(
+    `UPDATE student_courses
+     SET progress = ?, status = ?
+     WHERE student_id = ? AND course_id = ?`,
+    [summary.progressPercent, courseStatus, studentId, course.id]
+  )
+
+  return {
+    progress: summary.progressPercent,
+    status: courseStatus,
+  }
+}
+
+async function syncAllStudentCourseProgress(studentId, executor = pool) {
+  const [rows] = await executor.query(
+    `SELECT DISTINCT point_name
+     FROM student_learning_path_tasks
+     WHERE student_id = ?
+       AND point_name IS NOT NULL
+       AND point_name != ''`,
+    [studentId]
+  )
+
+  for (const row of rows) {
+    await syncStudentCourseProgress(studentId, row.point_name, executor)
+  }
 }
 
 async function saveLearningPathTask({
@@ -316,6 +344,8 @@ async function saveLearningPathTask({
       actorId,
     ]
   )
+
+  await syncStudentCourseProgress(studentId, safePointName)
 
   return {
     pointName: safePointName,
@@ -422,13 +452,6 @@ function formatSubmission(row = {}) {
     submittedAt: row.created_at,
     meta,
   }
-}
-
-function normalizeCheckpointName(value) {
-  const source = String(value || '').trim()
-  if (!source) return ''
-
-  return CHECKPOINT_NAME_ALIASES.reduce((result, [from, to]) => result.replaceAll(from, to), source)
 }
 
 function resolveReviewPointStatus(courseStatus = '') {
@@ -753,6 +776,7 @@ async function backfillStudentCoursesFromLearningPath(studentId) {
     )
 
     await syncAssignedTheoryLessonsForStudent(studentId, course, readMeta(row.meta_json))
+    await syncStudentCourseProgress(studentId, row.point_name)
   }
 }
 
@@ -1451,6 +1475,7 @@ router.get('/profile', async (req, res) => {
 
   try {
     await backfillStudentCoursesFromLearningPath(studentId)
+    await syncAllStudentCourseProgress(studentId)
 
     const [[profileInfo]] = await pool.query(
       `SELECT s.id, s.name, s.phone, s.status,
@@ -1497,6 +1522,7 @@ router.get('/profile', async (req, res) => {
 router.get('/access-summary', async (req, res) => {
   try {
     await backfillStudentCoursesFromLearningPath(req.user.id)
+    await syncAllStudentCourseProgress(req.user.id)
     res.json(await buildStudentAccessSummary(req.user.id))
   } catch (err) {
     res.status(500).json({ message: err.message })
@@ -1774,7 +1800,7 @@ router.get('/courses', async (_req, res) => {
 })
 
 function notificationUrlByType(type, relatedType, relatedId) {
-  if (type === 'class') return '/pages/lesson-live/lesson-live'
+  if (type === 'class') return relatedId ? `/pages/lesson-live/lesson-live?eventId=${relatedId}` : '/pages/lesson-live/lesson-live'
   if (type === 'exam') return '/pages/lesson-exam/lesson-exam'
   if (type === 'homework') return '/pages/lesson-correct/lesson-correct'
   if (type === 'review') return '/pages/results/results'
@@ -2024,6 +2050,26 @@ router.delete('/leave/:id', async (req, res) => {
     res.json({ message: '???????' })
   } catch (err) {
     res.status(500).json({ message: err.message })
+  }
+})
+
+// GET /api/student/lesson-live/:eventId  - 获取直播课信息（含腾讯会议链接）
+router.get('/lesson-live/:eventId', auth('student'), async (req, res) => {
+  const studentId = req.user.id
+  try {
+    const [[row]] = await pool.query(
+      `SELECT ce.id, ce.title, ce.date, ce.start_time, ce.end_time, ce.link AS live_url,
+              t.name AS teacher_name
+       FROM calendar_events ce
+       JOIN teacher_students ts ON ts.teacher_id = ce.teacher_id AND ts.student_id = ?
+       JOIN teachers t ON t.id = ce.teacher_id
+       WHERE ce.id = ? AND (ce.student_id = ? OR ce.student_id IS NULL)`,
+      [studentId, req.params.eventId, studentId]
+    )
+    if (!row) return res.status(404).json({ error: '课程不存在' })
+    res.json(row)
+  } catch (err) {
+    res.status(500).json({ error: err.message })
   }
 })
 
