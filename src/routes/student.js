@@ -416,7 +416,9 @@ async function validateStudentLearningPathPatch({
     return '\u8bf7\u5148\u6309\u987a\u5e8f\u5b8c\u6210\u524d\u9762\u7684\u5b66\u4e60\u8def\u5f84\u4efb\u52a1'
   }
 
-  if (isFeedbackTask(stageKey, taskId, learningPathRows)) {
+  // diagnose_feedback 是学生自填问卷，不需要老师批改，跳过批改检查
+  const isSelfFeedback = taskId === 'diagnose_feedback'
+  if (!isSelfFeedback && isFeedbackTask(stageKey, taskId, learningPathRows)) {
     const hasResult = await hasGradedSubmissionForFeedbackTask(studentId, pointName, stageKey, taskId)
     if (!hasResult) {
       return '\u8001\u5e08\u8fd8\u6ca1\u6709\u5b8c\u6210\u6279\u6539\uff0c\u6682\u65f6\u4e0d\u80fd\u5b8c\u6210\u53cd\u9988\u4efb\u52a1'
