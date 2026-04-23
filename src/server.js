@@ -6,6 +6,26 @@ const pool = require('./config/db')
 const { startClassReminderScheduler } = require('./lib/classReminder')
 require('dotenv').config()
 
+async function ensureDbColumns() {
+  const alters = [
+    ['calendar_events', "ADD COLUMN course_type ENUM('diagnose','consensus','correction') DEFAULT NULL"],
+    ['calendar_events', 'ADD COLUMN replay_link VARCHAR(500) DEFAULT NULL'],
+  ]
+  let conn
+  try {
+    conn = await pool.getConnection()
+    for (const [table, clause] of alters) {
+      try {
+        await conn.query(`ALTER TABLE ${table} ${clause}`)
+      } catch (e) {
+        if (e.errno !== 1060 && e.errno !== 1061) console.warn(`[db] ${table}: ${e.message}`)
+      }
+    }
+  } finally {
+    if (conn) conn.release()
+  }
+}
+
 const server = http.createServer(app)
 
 const wss = new WebSocketServer({ server })
@@ -215,7 +235,8 @@ wss.on('connection', async (ws, req) => {
 })
 
 const PORT = process.env.PORT || 3000
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
   console.log(`后端服务已启动：http://localhost:${PORT}`)
+  await ensureDbColumns()
   startClassReminderScheduler()
 })
