@@ -236,50 +236,11 @@ async function buildStudentLearningPath(studentId, pointName) {
   const safePointName = normalizeCheckpointName(pointName)
   const rows = await loadLearningPathRows(studentId, safePointName)
 
-  // 查询该学生所有 1v1 课程的链接
-  const [linkRows] = await pool.query(
-    `SELECT id, course_type, link, replay_link
-     FROM calendar_events
-     WHERE student_id = ? AND type = 'class' AND course_type IS NOT NULL
-     ORDER BY date DESC, start_time DESC`,
-    [studentId]
-  )
-  // 取每种 course_type 最新一条
-  const linkMap = {}
-  for (const r of linkRows) {
-    if (!linkMap[r.course_type]) linkMap[r.course_type] = r
-  }
-
-  const LIVE_TASK = { diagnose: 'diagnose_live', consensus: 'theory_consensus_live', correction: 'theory_correction_live' }
-  const REPLAY_TASK = { diagnose: 'diagnose_replay', consensus: 'theory_consensus_replay', correction: 'theory_correction_replay' }
-
+  // buildLearningPathPayload 内部的 decorateTask 会从 meta_json 的 liveUrl/replayUrl 注入 resource
   const payload = buildLearningPathPayload(studentId, safePointName, rows.map((row) => ({
     ...row,
     status: Number(row.is_done) ? 'done' : 'pending',
   })))
-
-  // 把链接注入对应 task 的 resource
-  function injectLinks(groups) {
-    if (!groups) return
-    for (const group of groups) {
-      if (group.subGroups) injectLinks(group.subGroups)
-      if (!group.items) continue
-      for (const item of group.items) {
-        for (const [ct, row] of Object.entries(linkMap)) {
-          if (item.taskId === LIVE_TASK[ct] && row.link) {
-            item.resource = { ...(item.resource || {}), liveUrl: row.link }
-          }
-          if (item.taskId === REPLAY_TASK[ct] && row.replay_link) {
-            item.resource = { ...(item.resource || {}), replayUrl: row.replay_link }
-          }
-        }
-      }
-    }
-  }
-
-  for (const stage of (payload.stages || [])) {
-    injectLinks(stage.groups)
-  }
 
   return payload
 }
@@ -1300,21 +1261,22 @@ router.patch('/learning-path/tasks/:taskId', async (req, res) => {
     const safePointName = normalizeCheckpointName(pointName)
     const learningPathRows = await loadLearningPathRows(studentId, safePointName)
     const taskDefinition = findTaskDefinition(stageKey, taskId, learningPathRows)
-    if (!taskDefinition) {
-      return res.status(400).json({ message: '?????????' })
-    }
 
-    const validationError = await validateStudentLearningPathPatch({
-      studentId,
-      pointName: safePointName,
-      stageKey,
-      taskId,
-      status,
-      learningPathRows,
-    })
+    // 即使找不到任务定义也允许写入，确保学生行为被记录
+    // 只有能找到定义时才做顺序校验
+    if (taskDefinition) {
+      const validationError = await validateStudentLearningPathPatch({
+        studentId,
+        pointName: safePointName,
+        stageKey,
+        taskId,
+        status,
+        learningPathRows,
+      })
 
-    if (validationError) {
-      return res.status(400).json({ message: validationError })
+      if (validationError) {
+        return res.status(400).json({ message: validationError })
+      }
     }
 
     const payload = await saveLearningPathTask({
@@ -1328,7 +1290,7 @@ router.patch('/learning-path/tasks/:taskId', async (req, res) => {
       actorId: studentId,
     })
 
-    if (metaPatch.rating && typeof metaPatch.rating === 'object') {
+    if (taskDefinition && metaPatch.rating && typeof metaPatch.rating === 'object') {
       const taskResource = taskDefinition.resource && typeof taskDefinition.resource === 'object'
         ? taskDefinition.resource
         : {}

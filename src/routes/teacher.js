@@ -2303,26 +2303,32 @@ router.patch('/students/:studentId/learning-path/tasks/:taskId', async (req, res
       return res.status(400).json({ message: '????' })
     }
 
+    const resourcePatch = req.body.resource || undefined
+    const metaPatch = {
+      selectedLabel: req.body.selectedLabel,
+      uploadCount: req.body.uploadCount,
+      uploadedAt: req.body.uploadedAt,
+      processingStartedAt: req.body.processingStartedAt,
+      processingDone: req.body.processingDone,
+      timerSeconds: req.body.timerSeconds,
+      timerFinishedAt: req.body.timerFinishedAt,
+      appointment: req.body.appointment,
+      rating: req.body.rating,
+      result: req.body.result,
+      resource: resourcePatch,
+      uploads: req.body.uploads,
+    }
+    // ResourceEditor 로 live/replay 링크를 저장할 때 meta.liveUrl/replayUrl 도 동기화
+    if (resourcePatch && resourcePatch.liveUrl)   metaPatch.liveUrl   = resourcePatch.liveUrl
+    if (resourcePatch && resourcePatch.replayUrl) metaPatch.replayUrl = resourcePatch.replayUrl
+
     const payload = await saveLearningPathTask({
       studentId,
       pointName,
       stageKey,
       taskId,
       status: String(req.body.status || 'done').trim() || 'done',
-      metaPatch: {
-        selectedLabel: req.body.selectedLabel,
-        uploadCount: req.body.uploadCount,
-        uploadedAt: req.body.uploadedAt,
-        processingStartedAt: req.body.processingStartedAt,
-        processingDone: req.body.processingDone,
-        timerSeconds: req.body.timerSeconds,
-        timerFinishedAt: req.body.timerFinishedAt,
-        appointment: req.body.appointment,
-        rating: req.body.rating,
-        result: req.body.result,
-        resource: req.body.resource,
-        uploads: req.body.uploads,
-      },
+      metaPatch,
       actorRole: 'teacher',
       actorId: teacherId,
     })
