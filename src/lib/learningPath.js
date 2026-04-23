@@ -395,7 +395,7 @@ const STAGE_DEFINITIONS = {
           { id: 'diagnose_paper', title: '诊断试卷', desc: '先完成诊断试卷，帮助老师判断当前卡点。', actionText: '查看试卷', actionType: 'document' },
           { id: 'diagnose_analysis_video', title: '听解析课', desc: '查看解析课内容，了解本卡点常见失分原因。', actionText: '去学习', actionType: 'video' },
           { id: 'diagnose_live', title: '1v1诊断：去上课', desc: '进入 1v1 诊断直播课链接。', actionText: '去上课', actionType: 'live' },
-          { id: 'diagnose_feedback', title: '课后反馈', desc: '查看老师给你的本次诊断反馈。', actionText: '查看反馈', actionType: 'feedback' },
+          { id: 'diagnose_feedback', title: '课后反馈', desc: '完成课后反馈问卷，帮助老师了解本次诊断课的学习情况。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'diagnose_replay', title: '去回顾', desc: '查看直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
           { id: 'diagnose_report', title: '报告', desc: '查看诊断报告和后续学习建议。', actionText: '查看报告', actionType: 'report' },
         ],

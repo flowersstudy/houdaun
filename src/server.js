@@ -3,6 +3,7 @@ const { WebSocketServer } = require('ws')
 const jwt = require('jsonwebtoken')
 const app = require('./app')
 const pool = require('./config/db')
+const { startClassReminderScheduler } = require('./lib/classReminder')
 require('dotenv').config()
 
 const server = http.createServer(app)
@@ -216,4 +217,5 @@ wss.on('connection', async (ws, req) => {
 const PORT = process.env.PORT || 3000
 server.listen(PORT, () => {
   console.log(`后端服务已启动：http://localhost:${PORT}`)
+  startClassReminderScheduler()
 })

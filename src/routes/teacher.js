@@ -613,64 +613,45 @@ async function getPendingAssignItems(teacherId) {
 }
 
 async function getPendingLinkItems(teacherId) {
-  const [classRows] = await pool.query(
+  const [rows] = await pool.query(
     `SELECT ce.id, ce.student_id, ce.title, ce.date, ce.start_time, ce.end_time,
+            ce.course_type, ce.link, ce.replay_link,
             s.name AS student_name, cr.id AS contact_id
      FROM calendar_events ce
      JOIN students s ON s.id = ce.student_id
      LEFT JOIN chat_rooms cr ON cr.teacher_id = ce.teacher_id AND cr.student_id = ce.student_id
      WHERE ce.teacher_id = ?
        AND ce.type = 'class'
-       AND ce.date >= CURDATE()
-       AND (ce.link IS NULL OR ce.link = '')
+       AND ce.course_type IS NOT NULL
+       AND (
+         (ce.link IS NULL OR ce.link = '')
+         OR (ce.replay_link IS NULL OR ce.replay_link = '')
+       )
      ORDER BY ce.date, ce.start_time
-     LIMIT 20`,
+     LIMIT 60`,
     [teacherId],
   )
 
-  const classItems = classRows.map((row) => ({
-    id: `link_${row.id}`,
-    name: `${row.student_name} · ${formatShortDate(row.date)} ${formatTime(row.start_time)}`,
-    subtitle: row.title || '待上传上课链接',
-    actionLabel: '上传链接',
-    avatar: avatar(row.student_name),
-    color: colorById(row.student_id),
-    contactId: row.contact_id ? String(row.contact_id) : undefined,
-    studentId: String(row.student_id),
-    eventId: String(row.id),
-    linkType: 'class',
-  }))
-
-  const [replayRows] = await pool.query(
-    `SELECT ce.id, ce.student_id, ce.title, ce.date, ce.start_time,
-            s.name AS student_name, cr.id AS contact_id
-     FROM calendar_events ce
-     JOIN students s ON s.id = ce.student_id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = ce.teacher_id AND cr.student_id = ce.student_id
-     LEFT JOIN lesson_materials lm ON lm.calendar_event_id = ce.id AND lm.material_type = 'replay'
-     WHERE ce.teacher_id = ?
-       AND ce.type = 'class'
-       AND (ce.date < CURDATE() OR (ce.date = CURDATE() AND ce.end_time < CURTIME()))
-       AND lm.id IS NULL
-     ORDER BY ce.date DESC, ce.start_time DESC
-     LIMIT 20`,
-    [teacherId],
-  )
-
-  const replayItems = replayRows.map((row) => ({
-    id: `replay_${row.id}`,
-    name: `${row.student_name} · ${formatShortDate(row.date)} ${formatTime(row.start_time)}`,
-    subtitle: row.title || '待上传回放链接',
-    actionLabel: '上传回放',
-    avatar: avatar(row.student_name),
-    color: colorById(row.student_id),
-    contactId: row.contact_id ? String(row.contact_id) : undefined,
-    studentId: String(row.student_id),
-    eventId: String(row.id),
-    linkType: 'replay',
-  }))
-
-  return [...classItems, ...replayItems]
+  const items = []
+  for (const row of rows) {
+    const base = {
+      name: `${row.student_name} · ${formatShortDate(row.date)} ${formatTime(row.start_time)}`,
+      subtitle: row.title || '',
+      avatar: avatar(row.student_name),
+      color: colorById(row.student_id),
+      contactId: row.contact_id ? String(row.contact_id) : undefined,
+      studentId: String(row.student_id),
+      eventId: String(row.id),
+      courseType: row.course_type,
+    }
+    if (!row.link) {
+      items.push({ ...base, id: `link_${row.id}`, actionLabel: '上传直播链接', linkType: 'live' })
+    }
+    if (!row.replay_link) {
+      items.push({ ...base, id: `replay_${row.id}`, actionLabel: '上传录播链接', linkType: 'replay' })
+    }
+  }
+  return items
 }
 
 async function getNewStudentItems(teacherId) {
@@ -2513,13 +2494,20 @@ router.put('/calendar/:eventId', async (req, res) => {
 
 // 濠电姷鏁告慨鐑藉极閸涘﹥鍙忛柣鎴ｆ閺嬩線鏌熼梻瀵割槮缁炬儳顭烽弻锝夊箛椤掍焦鍎撻梺鎼炲妼閸婂潡寮诲☉銏╂晝闁挎繂妫涢ˇ銉х磽娴ｅ搫小闁告濞婂濠氭偄閸忓皷鎷婚柣搴ｆ暩椤牊淇婃禒瀣拺闁告繂瀚崳铏圭磼鐠囪尙澧︾€殿喖顭锋俊鎼佸Ψ閵忊剝鏉搁梻浣虹《閸撴繈鏁嬪銈忚吂閺呮盯鈥旈崘顔嘉ч幖绮光偓鑼嚬婵犵數鍋犵亸娆撳窗閺嵮屽殨閻犲洦绁村Σ鍫ユ煏韫囨洖啸妞ゆ梹甯″娲嚃閳圭偓瀚涢梺鍛婃尰閻燂附绌辨繝鍐浄閻庯綆鍋嗛崢浠嬫煙閸忚偐鏆橀柛銊ヮ煼閵嗗倿鎳犻钘変壕闁稿繐顦禍楣冩⒑瑜版帗锛熺紒鈧笟鈧幏鎴︽偄閸濄儳顔曢梺鐟扮摠閻熴儵鎮橀埡鍐＜闁绘鏁哥敮娑樓庨崶褝韬柟顔界懄閿涙劕鈹戦崱姗嗗敳婵犵數鍋涢悺銊у垝閹惧墎涓嶉柡宓本缍庡┑鐐叉▕娴滄粍瀵奸悩缁樼厱闁哄洢鍔屽▍妯荤箾閻撳海鍩ｆ慨濠呮缁瑩宕犻埄鍐╂毎缂傚倷娴囬褔宕愰崸妤佹櫜闁绘劕澧庨悿鈧梺鐟板綖閻掞箑顪冩禒瀣ㄢ偓渚€寮崼婵堫槹濡炪倖鎸嗛崟鎴欏€濆娲嚒閵堝懏鐎剧紓渚囧枛閻偐鍒掗弮鍫熷仺闁汇垻鏁搁悞鍧楁倵楠炲灝鍔氭俊顐㈤叄瀹曟垿宕ㄧ€涙鍘遍梺纭呭焽閸斿秴鈻嶉崨顒?
 router.put('/calendar/:eventId/link', async (req, res) => {
-  const { link } = req.body
+  const { link, replay_link, linkType } = req.body
   try {
-    await pool.query(
-      'UPDATE calendar_events SET link = ? WHERE id = ? AND teacher_id = ?',
-      [link, req.params.eventId, req.user.id]
-    )
-    res.json({ message: '????' })
+    if (linkType === 'replay') {
+      await pool.query(
+        'UPDATE calendar_events SET replay_link = ? WHERE id = ? AND teacher_id = ?',
+        [replay_link || link, req.params.eventId, req.user.id]
+      )
+    } else {
+      await pool.query(
+        'UPDATE calendar_events SET link = ? WHERE id = ? AND teacher_id = ?',
+        [link, req.params.eventId, req.user.id]
+      )
+    }
+    res.json({ message: 'ok' })
   } catch (err) {
     res.status(500).json({ message: err.message })
   }

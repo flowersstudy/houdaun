@@ -78,4 +78,60 @@ async function sendGradeNotification(openid, { studentName, courseName, taskTitl
   }
 }
 
-module.exports = { sendGradeNotification }
+/**
+ * 发送课堂提醒订阅消息（上课前15分钟）
+ * @param {string} openid
+ * @param {object} params
+ * @param {string} params.studentName  学生姓名
+ * @param {string} params.title        课堂标题
+ * @param {Date|string} params.date    上课日期
+ * @param {string} params.startTime    上课时间 HH:MM:SS
+ * @param {string} params.link         课堂链接（可选）
+ */
+async function sendClassReminder(openid, { studentName, title, date, startTime, link }) {
+  const templateId = process.env.WX_TEMPLATE_CLASS
+  if (!templateId) {
+    console.warn('[wxSubscribe] WX_TEMPLATE_CLASS 未配置，跳过发送')
+    return
+  }
+  if (!openid) {
+    console.warn('[wxSubscribe] openid 为空，跳过发送')
+    return
+  }
+
+  const token = await getAccessToken()
+
+  const dateStr = date instanceof Date
+    ? date.toISOString().slice(0, 10)
+    : String(date).slice(0, 10)
+  const timeStr = String(startTime || '').slice(0, 5)
+
+  const data = {
+    thing1: { value: String(title || '课堂').slice(0, 20) },
+    time2:  { value: `${dateStr} ${timeStr}` },
+    name3:  { value: String(studentName || '同学').slice(0, 10) },
+    thing4: { value: link ? '点击查看课堂链接' : '请准时参加' },
+  }
+
+  const { data: result } = await axios.post(
+    `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${token}`,
+    {
+      touser: openid,
+      template_id: templateId,
+      page: '/pages/schedule/schedule',
+      data,
+    }
+  )
+
+  if (result.errcode && result.errcode !== 0) {
+    if (result.errcode === 43101) {
+      console.log(`[wxSubscribe] 用户 ${openid} 未订阅课堂提醒，跳过`)
+    } else {
+      console.error(`[wxSubscribe] 课堂提醒发送失败:`, result)
+    }
+  } else {
+    console.log(`[wxSubscribe] 课堂提醒已通知 ${openid}`)
+  }
+}
+
+module.exports = { sendGradeNotification, sendClassReminder }

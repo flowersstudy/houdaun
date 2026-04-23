@@ -235,10 +235,53 @@ async function loadLearningPathRows(studentId, pointName, executor = pool) {
 async function buildStudentLearningPath(studentId, pointName) {
   const safePointName = normalizeCheckpointName(pointName)
   const rows = await loadLearningPathRows(studentId, safePointName)
-  return buildLearningPathPayload(studentId, safePointName, rows.map((row) => ({
+
+  // 查询该学生所有 1v1 课程的链接
+  const [linkRows] = await pool.query(
+    `SELECT id, course_type, link, replay_link
+     FROM calendar_events
+     WHERE student_id = ? AND type = 'class' AND course_type IS NOT NULL
+     ORDER BY date DESC, start_time DESC`,
+    [studentId]
+  )
+  // 取每种 course_type 最新一条
+  const linkMap = {}
+  for (const r of linkRows) {
+    if (!linkMap[r.course_type]) linkMap[r.course_type] = r
+  }
+
+  const LIVE_TASK = { diagnose: 'diagnose_live', consensus: 'theory_consensus_live', correction: 'theory_correction_live' }
+  const REPLAY_TASK = { diagnose: 'diagnose_replay', consensus: 'theory_consensus_replay', correction: 'theory_correction_replay' }
+
+  const payload = buildLearningPathPayload(studentId, safePointName, rows.map((row) => ({
     ...row,
     status: Number(row.is_done) ? 'done' : 'pending',
   })))
+
+  // 把链接注入对应 task 的 resource
+  function injectLinks(groups) {
+    if (!groups) return
+    for (const group of groups) {
+      if (group.subGroups) injectLinks(group.subGroups)
+      if (!group.items) continue
+      for (const item of group.items) {
+        for (const [ct, row] of Object.entries(linkMap)) {
+          if (item.taskId === LIVE_TASK[ct] && row.link) {
+            item.resource = { ...(item.resource || {}), liveUrl: row.link }
+          }
+          if (item.taskId === REPLAY_TASK[ct] && row.replay_link) {
+            item.resource = { ...(item.resource || {}), replayUrl: row.replay_link }
+          }
+        }
+      }
+    }
+  }
+
+  for (const stage of (payload.stages || [])) {
+    injectLinks(stage.groups)
+  }
+
+  return payload
 }
 
 async function syncStudentCourseProgress(studentId, pointName, executor = pool) {
