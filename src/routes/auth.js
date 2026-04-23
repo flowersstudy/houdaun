@@ -77,7 +77,7 @@ async function ensureStudentVisibleForTeachers(studentId) {
   )
 
   await pool.query(
-    `INSERT INTO practice_assignment_tasks (teacher_id, student_id, checkpoint, detail, status)
+    `INSERT IGNORE INTO practice_assignment_tasks (teacher_id, student_id, checkpoint, detail, status)
      SELECT t.id, ?, NULL, '待分配学习方案', 'pending'
      FROM teachers t
      LEFT JOIN practice_assignment_tasks pat

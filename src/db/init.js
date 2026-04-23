@@ -573,6 +573,20 @@ async function init() {
     ['leave_requests', 'ADD CONSTRAINT fk_leave_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES teachers(id)'],
   ]
 
+  // 单独开通诊断课/刷题课记录表
+  await conn.query(`
+    CREATE TABLE IF NOT EXISTS student_special_courses (
+      id           INT AUTO_INCREMENT PRIMARY KEY,
+      student_id   INT NOT NULL,
+      type         ENUM('diagnose','drill') NOT NULL,
+      granted_by   INT NOT NULL,
+      created_at   DATETIME DEFAULT NOW(),
+      UNIQUE KEY uq_student_type (student_id, type),
+      FOREIGN KEY (student_id) REFERENCES students(id),
+      FOREIGN KEY (granted_by) REFERENCES teachers(id)
+    );
+  `)
+
   for (const [table, clause] of alters) {
     try {
       await conn.query(`ALTER TABLE ${table} ${clause}`)

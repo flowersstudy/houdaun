@@ -573,9 +573,31 @@ async function buildStudentAccessSummary(studentId) {
   const enrolledCourseCount = Number(studentCourseRow && studentCourseRow.totalCount) || 0
   const diagnosisReportCount = Number(diagnosisRow && diagnosisRow.count) || 0
 
+  // 查单独开通记录
+  let specialDiagnose = false
+  let specialDrill = false
+  try {
+    const [specialRows] = await pool.query(
+      `SELECT type FROM student_special_courses WHERE student_id = ?`,
+      [studentId]
+    )
+    for (const row of specialRows) {
+      if (row.type === 'diagnose') specialDiagnose = true
+      if (row.type === 'drill') specialDrill = true
+    }
+  } catch (error) {
+    if (!isMissingTableError(error)) throw error
+  }
+
+  // 买了卡点课 → 一定附赠诊断课和刷题课
+  const hasPurchasedCourse = enrolledCourseCount > 0 || paidOrderCourseCount > 0
+  const hasDiagnoseCourse = hasPurchasedCourse || diagnosisReportCount > 0 || pointRateCount > 0 || specialDiagnose
+  const hasDrillCourse = hasPurchasedCourse || specialDrill
+
   return {
-    hasPurchasedCourse: enrolledCourseCount > 0 || paidOrderCourseCount > 0,
-    hasDiagnoseCourse: diagnosisReportCount > 0 || pointRateCount > 0,
+    hasPurchasedCourse,
+    hasDiagnoseCourse,
+    hasDrillCourse,
     activeCourseCount,
     completedCourseCount,
     enrolledCourseCount,
@@ -2048,6 +2070,83 @@ router.delete('/leave/:id', async (req, res) => {
     }
 
     res.json({ message: '???????' })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// GET /api/student/materials/handouts - 获取讲义列表
+router.get('/materials/handouts', async (req, res) => {
+  const studentId = req.user.id
+  const eventId = req.query.eventId ? Number(req.query.eventId) : null
+
+  try {
+    const where = ['lm.student_id = ?', "lm.material_type = 'handout'"]
+    const params = [studentId]
+
+    if (eventId) {
+      where.push('lm.calendar_event_id = ?')
+      params.push(eventId)
+    }
+
+    const [rows] = await pool.query(
+      `SELECT lm.id, lm.title, lm.file_name, lm.created_at,
+              ce.id AS event_id, ce.title AS event_title, ce.date AS event_date
+       FROM lesson_materials lm
+       LEFT JOIN calendar_events ce ON ce.id = lm.calendar_event_id
+       WHERE ${where.join(' AND ')}
+       ORDER BY lm.created_at DESC`,
+      params
+    )
+
+    res.json(rows.map((row) => ({
+      id: row.id,
+      title: row.title || row.file_name || '讲义',
+      fileName: row.file_name || '',
+      createdAt: row.created_at,
+      eventId: row.event_id,
+      eventTitle: row.event_title || '',
+      eventDate: row.event_date || '',
+    })))
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// GET /api/student/materials/handouts/:id/file - 下载讲义文件
+router.get('/materials/handouts/:id/file', async (req, res) => {
+  const studentId = req.user.id
+  const handoutId = Number(req.params.id)
+
+  if (!handoutId) {
+    return res.status(400).json({ message: '缺少讲义ID' })
+  }
+
+  try {
+    const [[row]] = await pool.query(
+      `SELECT lm.file_name, lm.stored_file
+       FROM lesson_materials lm
+       WHERE lm.id = ? AND lm.student_id = ? AND lm.material_type = 'handout'
+       LIMIT 1`,
+      [handoutId, studentId]
+    )
+
+    if (!row) {
+      return res.status(404).json({ message: '讲义不存在' })
+    }
+
+    if (!row.stored_file) {
+      return res.status(404).json({ message: '讲义文件不存在' })
+    }
+
+    const filePath = path.join(UPLOADS_DIR, row.stored_file)
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: '讲义文件已丢失' })
+    }
+
+    res.setHeader('Content-Type', 'application/pdf')
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(row.file_name || 'handout.pdf')}"`)
+    fs.createReadStream(filePath).pipe(res)
   } catch (err) {
     res.status(500).json({ message: err.message })
   }

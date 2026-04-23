@@ -34,7 +34,7 @@ async function getAccessToken() {
  * @param {string} params.page         跳转页面路径
  */
 async function sendGradeNotification(openid, { studentName, courseName, taskTitle, score, page }) {
-  const templateId = process.env.WX_SUBSCRIBE_TEMPLATE_ID
+  const templateId = process.env.WX_TEMPLATE_GRADE
   if (!templateId) {
     console.warn('[wxSubscribe] WX_SUBSCRIBE_TEMPLATE_ID 未配置，跳过发送')
     return

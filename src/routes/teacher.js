@@ -2886,6 +2886,26 @@ router.post('/students/:studentId/courses', async (req, res) => {
   }
 })
 
+// 单独开通诊断课或刷题课
+router.post('/students/:studentId/special-course', async (req, res) => {
+  const { studentId } = req.params
+  const { type } = req.body
+  if (!type || !['diagnose', 'drill'].includes(type)) {
+    return res.status(400).json({ message: 'type 必须为 diagnose 或 drill' })
+  }
+  try {
+    await pool.query(
+      `INSERT INTO student_special_courses (student_id, type, granted_by)
+       VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE granted_by = VALUES(granted_by), created_at = NOW()`,
+      [studentId, type, req.user.id]
+    )
+    res.json({ message: '开通成功' })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
 router.get('/list', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, name, title FROM teachers ORDER BY id ASC')
