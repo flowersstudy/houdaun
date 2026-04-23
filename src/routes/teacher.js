@@ -557,10 +557,10 @@ async function getPendingAssignItems(teacherId) {
      FROM practice_assignment_tasks pat
      JOIN students s ON s.id = pat.student_id
      LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = pat.student_id
-     WHERE pat.status = 'pending'
+     WHERE pat.teacher_id = ? AND pat.status = 'pending'
      ORDER BY pat.created_at ASC
      LIMIT 20`,
-    [teacherId],
+    [teacherId, teacherId],
   )
 
   const [unassignedRows] = await pool.query(
@@ -612,43 +612,91 @@ async function getPendingAssignItems(teacherId) {
   }))
 }
 
+// 3种1v1直播课的任务定义
+const LIVE_TASK_DEFS = [
+  { courseType: 'diagnose',   liveTaskId: 'diagnose_live',          replayTaskId: 'diagnose_replay',          stageKey: 'diagnose', label: '1v1诊断' },
+  { courseType: 'consensus',  liveTaskId: 'theory_consensus_live',  replayTaskId: 'theory_consensus_replay',  stageKey: 'theory',   label: '1v1共识' },
+  { courseType: 'correction', liveTaskId: 'theory_correction_live', replayTaskId: 'theory_correction_replay', stageKey: 'theory',   label: '1v1纠偏' },
+]
+
 async function getPendingLinkItems(teacherId) {
+  const taskIds = LIVE_TASK_DEFS.flatMap((d) => [d.liveTaskId, d.replayTaskId])
   const [rows] = await pool.query(
-    `SELECT ce.id, ce.student_id, ce.title, ce.date, ce.start_time, ce.end_time,
-            ce.course_type, ce.link, ce.replay_link,
-            s.name AS student_name, cr.id AS contact_id
-     FROM calendar_events ce
-     JOIN students s ON s.id = ce.student_id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = ce.teacher_id AND cr.student_id = ce.student_id
-     WHERE ce.teacher_id = ?
-       AND ce.type = 'class'
-       AND ce.course_type IS NOT NULL
-       AND (
-         (ce.link IS NULL OR ce.link = '')
-         OR (ce.replay_link IS NULL OR ce.replay_link = '')
-       )
-     ORDER BY ce.date, ce.start_time
-     LIMIT 60`,
-    [teacherId],
+    `SELECT
+       ts.student_id,
+       s.name AS student_name,
+       cr.id AS contact_id,
+       c.name AS point_name,
+       slpt.task_id,
+       slpt.meta_json
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     LEFT JOIN chat_rooms cr ON cr.teacher_id = ts.teacher_id AND cr.student_id = ts.student_id
+     LEFT JOIN student_courses sc ON sc.student_id = ts.student_id
+     LEFT JOIN courses c ON c.id = sc.course_id
+     LEFT JOIN student_learning_path_tasks slpt
+       ON slpt.student_id = ts.student_id
+      AND slpt.task_id IN (${taskIds.map(() => '?').join(',')})
+     WHERE ts.teacher_id = ?
+     ORDER BY ts.student_id, slpt.task_id`,
+    [...taskIds, teacherId],
   )
 
-  const items = []
+  // 按学生整理，point_name 来自 student_courses
+  const studentMap = new Map()
   for (const row of rows) {
-    const base = {
-      name: `${row.student_name} · ${formatShortDate(row.date)} ${formatTime(row.start_time)}`,
-      subtitle: row.title || '',
-      avatar: avatar(row.student_name),
-      color: colorById(row.student_id),
-      contactId: row.contact_id ? String(row.contact_id) : undefined,
-      studentId: String(row.student_id),
-      eventId: String(row.id),
-      courseType: row.course_type,
+    const sid = String(row.student_id)
+    if (!studentMap.has(sid)) {
+      studentMap.set(sid, {
+        studentId: sid,
+        studentName: row.student_name,
+        contactId: row.contact_id ? String(row.contact_id) : undefined,
+        pointName: row.point_name ? normalizeCheckpointName(row.point_name) : '',
+        tasks: {},
+      })
     }
-    if (!row.link) {
-      items.push({ ...base, id: `link_${row.id}`, actionLabel: '上传直播链接', linkType: 'live' })
+    // 如果还没有 pointName，尝试从当前行补充
+    if (!studentMap.get(sid).pointName && row.point_name) {
+      studentMap.get(sid).pointName = normalizeCheckpointName(row.point_name)
     }
-    if (!row.replay_link) {
-      items.push({ ...base, id: `replay_${row.id}`, actionLabel: '上传录播链接', linkType: 'replay' })
+    if (row.task_id) {
+      let meta = {}
+      try { meta = JSON.parse(row.meta_json || '{}') } catch { meta = {} }
+      studentMap.get(sid).tasks[row.task_id] = {
+        liveUrl: meta.liveUrl || '',
+        replayUrl: meta.replayUrl || '',
+      }
+    }
+  }
+
+  const items = []
+  for (const student of studentMap.values()) {
+    // 没有分配课程的学生跳过
+    if (!student.pointName) continue
+
+    for (const def of LIVE_TASK_DEFS) {
+      const liveTask   = student.tasks[def.liveTaskId]
+      const replayTask = student.tasks[def.replayTaskId]
+
+      const base = {
+        name: student.studentName,
+        subtitle: `${def.label} · ${student.pointName}`,
+        avatar: avatar(student.studentName),
+        color: colorById(student.studentId),
+        contactId: student.contactId,
+        studentId: student.studentId,
+        courseType: def.courseType,
+        pointName: student.pointName,
+      }
+
+      // 直播链接：没有任务记录 或 有记录但 liveUrl 为空 → 显示上传
+      if (!liveTask || !liveTask.liveUrl) {
+        items.push({ ...base, id: `live_${student.studentId}_${def.courseType}`, actionLabel: '上传直播链接', linkType: 'live' })
+      }
+      // 录播链接：没有任务记录 或 有记录但 replayUrl 为空 → 显示上传
+      if (!replayTask || !replayTask.replayUrl) {
+        items.push({ ...base, id: `replay_${student.studentId}_${def.courseType}`, actionLabel: '上传录播链接', linkType: 'replay' })
+      }
     }
   }
   return items
@@ -2507,6 +2555,56 @@ router.put('/calendar/:eventId/link', async (req, res) => {
         [link, req.params.eventId, req.user.id]
       )
     }
+    res.json({ message: 'ok' })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+// 上传1v1直播/录播链接 → 存入学习路径任务 meta_json
+router.post('/live-link', async (req, res) => {
+  const { studentId, courseType, linkType, link, pointName } = req.body
+  if (!studentId || !courseType || !linkType || !link || !pointName) {
+    return res.status(400).json({ message: '缺少必要参数' })
+  }
+  const def = LIVE_TASK_DEFS.find((d) => d.courseType === courseType)
+  if (!def) return res.status(400).json({ message: '无效的课程类型' })
+
+  const taskId   = linkType === 'replay' ? def.replayTaskId : def.liveTaskId
+  const metaKey  = linkType === 'replay' ? 'replayUrl' : 'liveUrl'
+  const safePoint = normalizeCheckpointName(pointName)
+
+  try {
+    // 验证该学生属于该老师
+    const [[ts]] = await pool.query(
+      'SELECT 1 FROM teacher_students WHERE teacher_id = ? AND student_id = ? LIMIT 1',
+      [req.user.id, studentId]
+    )
+    if (!ts) return res.status(403).json({ message: '无权操作' })
+
+    // 读取现有 meta_json
+    const [[existing]] = await pool.query(
+      `SELECT id, meta_json FROM student_learning_path_tasks
+       WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ? LIMIT 1`,
+      [studentId, safePoint, def.stageKey, taskId]
+    )
+    let meta = {}
+    if (existing) {
+      try { meta = JSON.parse(existing.meta_json || '{}') } catch { meta = {} }
+    }
+    meta[metaKey] = link
+
+    await pool.query(
+      `INSERT INTO student_learning_path_tasks
+         (student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id)
+       VALUES (?, ?, ?, ?, 0, ?, 'teacher', ?)
+       ON DUPLICATE KEY UPDATE
+         meta_json = VALUES(meta_json),
+         updated_by_role = 'teacher',
+         updated_by_id = VALUES(updated_by_id),
+         updated_at = NOW()`,
+      [studentId, safePoint, def.stageKey, taskId, JSON.stringify(meta), req.user.id]
+    )
     res.json({ message: 'ok' })
   } catch (err) {
     res.status(500).json({ message: err.message })

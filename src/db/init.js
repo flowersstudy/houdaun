@@ -572,6 +572,8 @@ async function init() {
     ['student_flags', 'ADD COLUMN reason VARCHAR(100) AFTER flagged'],
     ['student_flags', "ADD COLUMN severity ENUM('high','medium','low') DEFAULT 'medium' AFTER reason"],
     ['calendar_events', 'ADD CONSTRAINT fk_ce_student FOREIGN KEY (student_id) REFERENCES students(id)'],
+    ['calendar_events', "ADD COLUMN course_type ENUM('diagnose','consensus','correction') DEFAULT NULL"],
+    ['calendar_events', 'ADD COLUMN replay_link VARCHAR(500) DEFAULT NULL'],
     ['leave_requests', 'ADD CONSTRAINT fk_leave_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES teachers(id)'],
   ]
 

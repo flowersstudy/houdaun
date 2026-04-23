@@ -413,9 +413,20 @@ const STAGE_DEFINITIONS = {
         title: '课前准备',
         items: [
           { id: 'theory_handout', title: '课前讲义', desc: '下载理论课课前讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
+          { id: 'theory_consensus_live', title: '1v1共识：去上课', desc: '进入 1v1 共识直播课链接。', actionText: '去上课', actionType: 'live' },
+          { id: 'theory_consensus_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+          { id: 'theory_consensus_replay', title: '去回顾', desc: '查看 1v1 共识直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
         ],
       },
       ...THEORY_ROUND_GROUPS,
+      {
+        title: '1v1纠偏',
+        items: [
+          { id: 'theory_correction_live', title: '1v1纠偏：去上课', desc: '进入 1v1 纠偏直播课链接。', actionText: '去上课', actionType: 'live' },
+          { id: 'theory_correction_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+          { id: 'theory_correction_replay', title: '去回顾', desc: '查看 1v1 纠偏直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+        ],
+      },
       {
         title: '思维导图',
         items: [
@@ -511,13 +522,23 @@ function readMeta(value) {
 
 function decorateTask(item, taskState = {}) {
   const meta = readMeta(taskState.meta_json)
+  // 将 meta 中存储的直播/录播链接注入到 resource
+  const baseResource = meta.resource || item.resource || null
+  let resource = baseResource
+  if (meta.liveUrl || meta.replayUrl) {
+    resource = {
+      ...(baseResource || { resourceType: '', title: '', url: '', videoId: '', liveUrl: '', replayUrl: '', noteUrl: '' }),
+      liveUrl: meta.liveUrl || (baseResource && baseResource.liveUrl) || '',
+      replayUrl: meta.replayUrl || (baseResource && baseResource.replayUrl) || '',
+    }
+  }
   return {
     ...item,
     taskId: item.id,
     taskKey: item.id,
     status: taskState.status || 'pending',
     meta,
-    resource: meta.resource || item.resource || null,
+    resource,
     secondaryAction: item.secondaryActionText
       ? { label: item.secondaryActionText, actionType: item.secondaryActionType }
       : null,

@@ -134,4 +134,53 @@ async function sendClassReminder(openid, { studentName, title, date, startTime, 
   }
 }
 
-module.exports = { sendGradeNotification, sendClassReminder }
+/**
+ * 发送作业提交提醒（截止前24小时）
+ * @param {string} openid
+ * @param {object} params
+ * @param {string} params.studentName  学生姓名
+ * @param {string} params.checkpoint   作业名称/卡点
+ * @param {string} params.deadline     截止时间 YYYY-MM-DD HH:MM:SS
+ */
+async function sendDeadlineReminder(openid, { studentName, checkpoint, deadline }) {
+  const templateId = process.env.WX_TEMPLATE_DEADLINE
+  if (!templateId) {
+    console.warn('[wxSubscribe] WX_TEMPLATE_DEADLINE 未配置，跳过发送')
+    return
+  }
+  if (!openid) {
+    console.warn('[wxSubscribe] openid 为空，跳过发送')
+    return
+  }
+
+  const token = await getAccessToken()
+
+  const data = {
+    thing1: { value: String(checkpoint || '作业').slice(0, 20) },
+    time2:  { value: String(deadline || '').slice(0, 16) },
+    name3:  { value: String(studentName || '同学').slice(0, 10) },
+    thing4: { value: '请在截止时间前完成提交' },
+  }
+
+  const { data: result } = await axios.post(
+    `https://api.weixin.qq.com/cgi-bin/message/subscribe/send?access_token=${token}`,
+    {
+      touser: openid,
+      template_id: templateId,
+      page: '/pages/lesson-correct/lesson-correct',
+      data,
+    }
+  )
+
+  if (result.errcode && result.errcode !== 0) {
+    if (result.errcode === 43101) {
+      console.log(`[wxSubscribe] 用户 ${openid} 未订阅作业提醒，跳过`)
+    } else {
+      console.error(`[wxSubscribe] 作业提醒发送失败:`, result)
+    }
+  } else {
+    console.log(`[wxSubscribe] 作业提醒已通知 ${openid}`)
+  }
+}
+
+module.exports = { sendGradeNotification, sendClassReminder, sendDeadlineReminder }
