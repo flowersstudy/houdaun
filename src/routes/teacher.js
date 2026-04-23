@@ -566,17 +566,18 @@ async function getPendingAssignItems(teacherId) {
   const [unassignedRows] = await pool.query(
     `SELECT s.id AS student_id, s.name AS student_name, cr.id AS contact_id
      FROM students s
+     JOIN teacher_students ts ON ts.teacher_id = ? AND ts.student_id = s.id
      LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = s.id
      WHERE NOT EXISTS (
        SELECT 1 FROM student_courses sc WHERE sc.student_id = s.id
      )
        AND NOT EXISTS (
          SELECT 1 FROM practice_assignment_tasks pat
-         WHERE pat.student_id = s.id AND pat.status = 'pending'
+         WHERE pat.teacher_id = ? AND pat.student_id = s.id AND pat.status = 'pending'
        )
      ORDER BY s.created_at DESC, s.id DESC
      LIMIT ?`,
-    [teacherId, Math.max(0, 20 - taskRows.length)],
+    [teacherId, teacherId, teacherId, Math.max(0, 20 - taskRows.length)],
   )
 
   const rows = [

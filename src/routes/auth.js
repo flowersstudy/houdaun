@@ -327,6 +327,7 @@ router.post('/student/wx-login', async (req, res) => {
         'INSERT INTO students (openid, name, status) VALUES (?, ?, ?)',
         [openid, '新学员', 'new']
       )
+      await ensureStudentVisibleForTeachers(result.insertId)
       student = await getStudentAuthRecordById(result.insertId)
     }
 
