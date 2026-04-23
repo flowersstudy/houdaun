@@ -348,17 +348,20 @@ async function init() {
       id                INT AUTO_INCREMENT PRIMARY KEY,
       teacher_id        INT NOT NULL,
       student_id        INT,
-      calendar_event_id INT NOT NULL,
+      calendar_event_id INT NULL,
+      point_name        VARCHAR(100) NULL,
+      stage_key         VARCHAR(30)  NULL,
+      task_id           VARCHAR(100) NULL,
       material_type     ENUM('handout','replay') NOT NULL,
       title             VARCHAR(255),
       url               VARCHAR(500),
       file_name         VARCHAR(255),
       stored_file       VARCHAR(255),
       created_at        DATETIME DEFAULT NOW(),
-      UNIQUE KEY uq_lesson_material (calendar_event_id, material_type),
+      UNIQUE KEY uq_lesson_material_event (calendar_event_id, material_type),
+      UNIQUE KEY uq_lesson_material_task (student_id, point_name, stage_key, task_id, material_type),
       FOREIGN KEY (teacher_id) REFERENCES teachers(id),
-      FOREIGN KEY (student_id) REFERENCES students(id),
-      FOREIGN KEY (calendar_event_id) REFERENCES calendar_events(id)
+      FOREIGN KEY (student_id) REFERENCES students(id)
     );
 
     CREATE TABLE IF NOT EXISTS practice_assignment_tasks (

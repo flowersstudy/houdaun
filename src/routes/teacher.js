@@ -728,34 +728,54 @@ async function getNewStudentItems(teacherId) {
   }))
 }
 
+const HANDOUT_TASK_IDS = [
+  'theory_handout',
+  'theory_round_1_handout',
+  'theory_round_2_handout',
+  'theory_round_3_handout',
+]
+
 async function getPendingHandoutItems(teacherId) {
+  const placeholders = HANDOUT_TASK_IDS.map(() => '?').join(',')
   const [rows] = await pool.query(
-    `SELECT ce.id, ce.student_id, ce.title, ce.date, ce.start_time,
-            s.name AS student_name, COALESCE(ts.subject, '') AS subject, cr.id AS contact_id
-     FROM calendar_events ce
-     JOIN students s ON s.id = ce.student_id
-     JOIN teacher_students ts ON ts.student_id = ce.student_id AND ts.teacher_id = ce.teacher_id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = ce.teacher_id AND cr.student_id = ce.student_id
-     LEFT JOIN lesson_materials lm ON lm.calendar_event_id = ce.id AND lm.material_type = 'handout'
-     WHERE ce.teacher_id = ?
-       AND ce.type = 'class'
-       AND (ce.date < CURDATE() OR (ce.date = CURDATE() AND ce.end_time < CURTIME()))
+    `SELECT ts.student_id, s.name AS student_name, cr.id AS contact_id,
+            slpt.id AS task_row_id, slpt.task_id, slpt.point_name, slpt.stage_key
+     FROM teacher_students ts
+     JOIN students s ON s.id = ts.student_id
+     LEFT JOIN chat_rooms cr ON cr.teacher_id = ts.teacher_id AND cr.student_id = ts.student_id
+     JOIN student_learning_path_tasks slpt
+       ON slpt.student_id = ts.student_id
+      AND slpt.task_id IN (${placeholders})
+     LEFT JOIN lesson_materials lm
+       ON lm.student_id = ts.student_id
+      AND lm.point_name = slpt.point_name
+      AND lm.stage_key  = slpt.stage_key
+      AND lm.task_id    = slpt.task_id
+      AND lm.material_type = 'handout'
+     WHERE ts.teacher_id = ?
        AND lm.id IS NULL
-     ORDER BY ce.date DESC, ce.start_time DESC
+     ORDER BY ts.student_id, slpt.task_id
      LIMIT 20`,
-    [teacherId],
+    [...HANDOUT_TASK_IDS, teacherId],
   )
 
+  const TASK_LABEL = {
+    theory_handout: '理论课讲义',
+    theory_round_1_handout: '第1轮理论课讲义',
+    theory_round_2_handout: '第2轮理论课讲义',
+    theory_round_3_handout: '第3轮理论课讲义',
+  }
+
   return rows.map((row) => ({
-    id: `handout_${row.id}`,
-    name: `课次 ${formatShortDate(row.date)} · ${row.subject || row.student_name}`,
-    subtitle: `${row.title || row.student_name} · 课后讲义未上传`,
+    id: `handout_${row.task_row_id}`,
+    name: row.student_name,
+    subtitle: `${row.point_name} · ${TASK_LABEL[row.task_id] || '讲义'}未上传`,
     actionLabel: '上传讲义',
     avatar: avatar(row.student_name),
     color: colorById(row.student_id),
     contactId: row.contact_id ? String(row.contact_id) : undefined,
     studentId: String(row.student_id),
-    eventId: String(row.id),
+    taskRowId: String(row.task_row_id),
   }))
 }
 async function getPendingFeedbackItems() {
@@ -2645,31 +2665,42 @@ router.post('/materials/replay', async (req, res) => {
 
 // 濠电姷鏁告慨鐑藉极閸涘﹥鍙忛柣鎴ｆ閺嬩線鏌熼梻瀵割槮缁炬儳顭烽弻锝夊箛椤掍焦鍎撻梺鎼炲妼閸婂潡寮诲☉銏╂晝闁挎繂妫涢ˇ銉х磽娴ｅ搫小闁告濞婂濠氭偄閸忓皷鎷婚柣搴ｆ暩椤牊淇婃禒瀣拺闁告繂瀚崳铏圭磼鐠囪尙澧︾€殿喖顭锋俊鎼佸Ψ閵忊剝鏉搁梻浣虹《閸撴繈鏁嬪銈忚吂閺呮盯鈥旈崘顔嘉ч幖绮光偓鑼嚬婵犵數鍋犵亸娆撳窗閺嵮屽殨閻犲洦绁村Σ鍫ユ煏韫囨洖啸妞ゆ梹甯″娲嚃閳圭偓瀚涢梺鍛婃尰閻燂附绌辨繝鍐浄閻庯綆鍋嗛崢浠嬫煙閸忚偐鏆橀柛銊ヮ煼閵嗗倿鎳犻钘変壕闁稿繐顦禍楣冩⒑瑜版帗锛熺紒鈧笟鈧幏鎴︽偄閸忚偐鍘介梺鍝勫暙閸婄敻骞忛敓鐘崇厸濞达絽鎽滄晥闂佸搫鏈惄顖炲春閸曨垰绀冮柣鎰靛墰閺嗐儲淇婇悙顏勨偓鏇犳崲閸℃稑鐤鹃柣妯款嚙閽冪喓鈧箍鍎遍悧婊冾瀶閵娾晜鈷戦柛娑橈攻鐏忎即鏌ｉ埡濠傜仩妞ゆ洩缍侀、鏇㈡晲閸モ晝妲囨繝娈垮枟閿曗晠宕滃☉銏″仼婵炲樊浜濋悡鐔兼煟閺傛寧鎲搁柟鍐插暣閹顫濋悡搴＄闂佸憡甯掗敃顏堢嵁濮椻偓椤㈡瑩鎮剧仦钘夌睄濠电姷顣藉Σ鍛村垂椤栨粍濯伴柨鏇楀亾閸楅亶鏌涘┑鍡楊伌闁绘柨妫濋幃褰掑传閸曨剚鍎撳銈呮禋閸嬪棛妲?
 router.post('/materials/handout', uploadMaterial.single('file'), async (req, res) => {
-  const { eventId } = req.body
-  if (!eventId) {
+  const { taskRowId } = req.body
+  if (!taskRowId) {
     if (req.file) fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
-    return res.status(400).json({ message: '????' })
+    return res.status(400).json({ message: '缺少任务节点ID' })
   }
-  if (!req.file) return res.status(400).json({ message: '????' })
+  if (!req.file) return res.status(400).json({ message: '请上传文件' })
 
   try {
-    const [[event]] = await pool.query(
-      'SELECT id, teacher_id, student_id, title FROM calendar_events WHERE id = ? AND teacher_id = ? LIMIT 1',
-      [eventId, req.user.id],
+    const [[task]] = await pool.query(
+      `SELECT slpt.id, slpt.student_id, slpt.point_name, slpt.stage_key, slpt.task_id
+       FROM student_learning_path_tasks slpt
+       JOIN teacher_students ts ON ts.student_id = slpt.student_id AND ts.teacher_id = ?
+       WHERE slpt.id = ?
+       LIMIT 1`,
+      [req.user.id, taskRowId],
     )
-    if (!event) {
+    if (!task) {
       fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
-      return res.status(404).json({ message: '????' })
+      return res.status(404).json({ message: '任务节点不存在或无权限' })
     }
 
+    const title = task.point_name + ' · ' + req.file.originalname
+
     await pool.query(
-      `INSERT INTO lesson_materials (teacher_id, student_id, calendar_event_id, material_type, title, file_name, stored_file)
-       VALUES (?, ?, ?, 'handout', ?, ?, ?)
-       ON DUPLICATE KEY UPDATE title = VALUES(title), file_name = VALUES(file_name), stored_file = VALUES(stored_file), created_at = NOW()`,
-      [req.user.id, event.student_id, event.id, `闂傚倸鍊搁崐鎼佸磹閹间礁纾圭€瑰嫭鍣磋ぐ鎺戠倞鐟滃繘寮抽敃鍌涚厱妞ゎ厽鍨垫禍婵嬫煕濞嗗繒绠婚柡灞稿墲瀵板嫮鈧綆浜濋鍛攽閻愬弶鈻曞ù婊勭箞瀵彃鈹戠€ｎ偆鍘遍柣蹇曞仧閸嬫捇鎯冮幋锔界叆婵炴垶鑹鹃弸娑欐叏婵犲懏顏犻柟鍙夋尦瀹曠喖顢曢姀鐘橈附绻濈喊妯活潑闁稿瀚埀顒佸嚬閸犳岸宕氶幒鎾剁瘈婵﹩鍓欓崬銊╂⒑闂堟侗鐒鹃柛濠冾殘缁顫濋懜纰樻嫼闂傚倸鐗婄粙鎾存櫠閺囥垺鐓欓柛鎰叀閸欏嫮鈧鍠楁繛濠囧箖濞嗗緷鍦偓锝庡亝閺夊憡淇婇悙顏勨偓鏍偋濡ゅ懎浼犻幖娣妼绾惧鏌曡箛濞惧亾閼碱剛鐣炬俊鐐€栭崝鎴﹀垂濞差亜鍚归柛銉ｅ妸娴滄粓鏌曡箛濠傚⒉缂佲偓鐎ｎ偁浜滈柕蹇婂墲缁€瀣攽椤旂懓浜鹃梻浣虹帛钃辨い鏃€鐗犲畷顖溾偓锝庡枟閳锋帡鏌涚仦鍓ф噮闁告柨绉归弻锝夘敂閸曨厾楔閻庤娲橀崝娆忣嚕閹绢喖顫呴柣妯兼暩閺嬪啯绻濆▓鍨灍闁靛洦鐩畷鎴﹀箻閸ㄦ稑浜?{event.title || '闂傚倸鍊搁崐鎼佸磹閹间礁纾归柟闂寸绾剧懓顪冪€ｎ亝鎹ｉ柣顓炴閵嗘帒顫濋敐鍛婵°倗濮烽崑鐐烘偋閻樻眹鈧線寮撮姀鈩冩珕闂佽姤锚椤︻喚绱旈弴鐔虹瘈闁汇垽娼у瓭闂佹寧娲忛崐妤呭焵椤掍礁鍤柛锝忕秮婵℃挳宕ㄩ弶鎴犵厬婵犮垼娉涢惉濂告儊閸喓绡€闁汇垽娼у瓭闂佺锕︾划顖炲疾閸洖鍗抽柣妯兼暩閿涙粓姊虹紒姗堣€挎繛浣冲洤鐓濋柛顐犲劜閻撴盯鎮橀悙棰濆殭濠殿喖鍊块弻鐔碱敊閸濆嫮浼堥悗瑙勬处閸嬪﹤鐣烽悢鐓庣婵炲棗绻掓导鍫ユ⒑鐠団€虫灈闁搞垺鐓￠崺銏℃償閳锯偓閺嬪酣鐓崶椋庣ɑ闁哥姵锕㈠缁樼瑹閳ь剟鍩€椤掑倸浠滈柤娲诲灡閺呭爼顢欓崜褏锛滈梺缁橆焾鐏忔瑦鏅ラ柣搴ゎ潐濞叉ê煤閻旂厧钃熼柛鈩冾殢閸氬鏌涢埄鍐︿沪缂傚啯娲樼换婵嬫偨闂堟刀銏ゆ煥閺囨ê鈧繈骞冭瀹曞崬鈽夊Ο鍟冩洟鎮峰鍛暭閻㈩垱顨婇幃锟犲Ψ閳哄倻鍘搁梺鍛婂姂閸斿矂鍩€椤掑倹鍤€闁宠绉瑰鎾偐閻㈢绱?}`, req.file.originalname, req.file.filename],
+      `INSERT INTO lesson_materials
+         (teacher_id, student_id, point_name, stage_key, task_id, material_type, title, file_name, stored_file)
+       VALUES (?, ?, ?, ?, ?, 'handout', ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         title = VALUES(title),
+         file_name = VALUES(file_name),
+         stored_file = VALUES(stored_file),
+         created_at = NOW()`,
+      [req.user.id, task.student_id, task.point_name, task.stage_key, task.task_id, title, req.file.originalname, req.file.filename],
     )
 
-    res.json({ message: '????' })
+    res.json({ message: '上传成功' })
   } catch (err) {
     fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
     res.status(500).json({ message: err.message })
