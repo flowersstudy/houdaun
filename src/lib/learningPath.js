@@ -49,7 +49,7 @@ function buildDynamicTheoryDefinition(stateRows = []) {
     return null
   }
 
-  const groups = theoryLessons.map((lesson, index) => {
+  const roundGroups = theoryLessons.map((lesson, index) => {
     const roundNumber = index + 1
     const roundLabel = `第 ${roundNumber} 轮`
     const titlePrefix = lesson.title || roundLabel
@@ -116,22 +116,52 @@ function buildDynamicTheoryDefinition(stateRows = []) {
     }
   })
 
-  groups.push({
-    title: '思维导图',
-    items: [
-      {
-        id: 'theory_mindmap_upload',
-        title: '上传思维导图',
-        desc: '支持上传 PDF 或照片，可反复重新上传。',
-        actionText: '去上传',
-        actionType: 'upload',
-      },
-    ],
-  })
+  const groups = [
+    {
+      title: '1v1共识',
+      items: [
+        { id: 'theory_consensus_live', title: '1v1共识：去上课', desc: '进入 1v1 共识直播课链接。', actionText: '去上课', actionType: 'live' },
+        { id: 'theory_consensus_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+        { id: 'theory_consensus_replay', title: '去回顾', desc: '查看 1v1 共识直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+        { id: 'theory_consensus_handout', title: '课后讲义', desc: '查看本次共识课课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
+      ],
+    },
+    ...roundGroups,
+    {
+      title: '思维导图',
+      items: [
+        {
+          id: 'theory_mindmap_upload',
+          title: '上传思维导图',
+          desc: '支持上传 PDF 或照片，可反复重新上传。',
+          actionText: '去上传',
+          actionType: 'upload',
+        },
+        {
+          id: 'theory_mindmap_feedback',
+          title: '老师点评',
+          desc: '查看思维导图老师点评。',
+          actionText: '查看点评',
+          actionType: 'feedback',
+        },
+      ],
+    },
+    {
+      title: '1v1纠偏',
+      items: [
+        { id: 'theory_correction_live', title: '1v1纠偏：去上课', desc: '进入 1v1 纠偏直播课链接。', actionText: '去上课', actionType: 'live' },
+        { id: 'theory_correction_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+        { id: 'theory_correction_replay', title: '去回顾', desc: '查看 1v1 纠偏直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+        { id: 'theory_correction_handout', title: '课后讲义', desc: '查看本次纠偏课课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
+        { id: 'theory_correction_upload', title: '作业上传', desc: '上传纠偏课后作业。', actionText: '去上传', actionType: 'upload' },
+        { id: 'theory_correction_review', title: '批改反馈', desc: '查看纠偏课作业批改反馈。', actionText: '查看反馈', actionType: 'feedback' },
+      ],
+    },
+  ]
 
   return {
     ...STAGE_DEFINITIONS.theory,
-    stageSubtitle: `按老师分配的 ${theoryLessons.length} 节理论课顺序学习，完成后再上传思维导图。`,
+    stageSubtitle: `按"1v1共识—理论课（${theoryLessons.length}轮）—1v1纠偏"顺序完成理论阶段学习。`,
     groups,
   }
 }
@@ -299,6 +329,13 @@ const DRILL_ITEMS = [
     actionType: 'replay',
   },
   {
+    id: 'drill_handout',
+    title: '课后讲义',
+    desc: '查看本次刷题课课后讲义 PDF。',
+    actionText: '查看讲义',
+    actionType: 'document',
+  },
+  {
     id: 'drill_qa_summary',
     title: '群内答疑总结',
     desc: '查看群内答疑总结。',
@@ -397,6 +434,7 @@ const STAGE_DEFINITIONS = {
           { id: 'diagnose_live', title: '1v1诊断：去上课', desc: '进入 1v1 诊断直播课链接。', actionText: '去上课', actionType: 'live' },
           { id: 'diagnose_feedback', title: '课后反馈', desc: '完成课后反馈问卷，帮助老师了解本次诊断课的学习情况。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'diagnose_replay', title: '去回顾', desc: '查看直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+          { id: 'diagnose_handout', title: '课后讲义', desc: '查看本次诊断课课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
           { id: 'diagnose_report', title: '报告', desc: '查看诊断报告和后续学习建议。', actionText: '查看报告', actionType: 'report' },
         ],
       },
@@ -430,6 +468,7 @@ const STAGE_DEFINITIONS = {
         title: '思维导图',
         items: [
           { id: 'theory_mindmap_upload', title: '上传思维导图', desc: '支持上传 PDF 或照片，可反复重新上传。', actionText: '去上传', actionType: 'upload' },
+          { id: 'theory_mindmap_feedback', title: '老师点评', desc: '查看思维导图老师点评。', actionText: '查看点评', actionType: 'feedback' },
         ],
       },
     ],
