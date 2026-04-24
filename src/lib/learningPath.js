@@ -506,7 +506,7 @@ const STAGE_DEFINITIONS = {
 }
 
 function normalizeStatus(status = '') {
-  return ['done', 'current', 'pending'].includes(status) ? status : 'done'
+  return ['done', 'current', 'pending'].includes(status) ? status : 'pending'
 }
 
 function readMeta(value) {

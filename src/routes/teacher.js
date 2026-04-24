@@ -665,7 +665,7 @@ async function getPendingLinkItems(teacherId) {
       try { meta = JSON.parse(row.meta_json || '{}') } catch { meta = {} }
       studentMap.get(sid).tasks[row.task_id] = {
         liveUrl: meta.liveUrl || '',
-        replayUrl: meta.replayUrl || '',
+        replayVideoId: meta.replayVideoId || '',
       }
     }
   }
@@ -694,8 +694,8 @@ async function getPendingLinkItems(teacherId) {
       if (!liveTask || !liveTask.liveUrl) {
         items.push({ ...base, id: `live_${student.studentId}_${def.courseType}`, actionLabel: '上传直播链接', linkType: 'live' })
       }
-      // 录播链接：没有任务记录 或 有记录但 replayUrl 为空 → 显示上传
-      if (!replayTask || !replayTask.replayUrl) {
+      // 录播链接：没有任务记录 或 有记录但 replayVideoId 为空 → 显示上传
+      if (!replayTask || !replayTask.replayVideoId) {
         items.push({ ...base, id: `replay_${student.studentId}_${def.courseType}`, actionLabel: '上传录播链接', linkType: 'replay' })
       }
     }
@@ -2455,7 +2455,17 @@ router.get('/students/:studentId/info', async (req, res) => {
        WHERE student_id = ? AND point_name IS NOT NULL AND point_name != ''`,
       [studentId]
     )
-    const activeCheckpoints = new Set(checkpointRows.map((r) => r.point_name))
+    const [courseCheckpointRows] = await pool.query(
+      `SELECT DISTINCT c.name AS point_name
+       FROM student_courses sc
+       JOIN courses c ON c.id = sc.course_id
+       WHERE sc.student_id = ? AND c.name IS NOT NULL AND c.name != ''`,
+      [studentId]
+    )
+    const activeCheckpoints = new Set([
+      ...checkpointRows.map((r) => r.point_name),
+      ...courseCheckpointRows.map((r) => normalizeCheckpointName(r.point_name)).filter(Boolean),
+    ])
     const checkpoints = ALL_CHECKPOINTS.map((name) => ({
       name,
       hasData: activeCheckpoints.has(name),
@@ -2609,7 +2619,7 @@ router.post('/live-link', async (req, res) => {
   if (!def) return res.status(400).json({ message: '无效的课程类型' })
 
   const taskId   = linkType === 'replay' ? def.replayTaskId : def.liveTaskId
-  const metaKey  = linkType === 'replay' ? 'replayUrl' : 'liveUrl'
+  const metaKey  = linkType === 'replay' ? 'replayVideoId' : 'liveUrl'
   const safePoint = normalizeCheckpointName(pointName)
 
   try {
@@ -2634,10 +2644,11 @@ router.post('/live-link', async (req, res) => {
 
     await pool.query(
       `INSERT INTO student_learning_path_tasks
-         (student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id)
-       VALUES (?, ?, ?, ?, 0, ?, 'teacher', ?)
+         (student_id, point_name, stage_key, task_id, is_done, status, meta_json, updated_by_role, updated_by_id)
+       VALUES (?, ?, ?, ?, 0, 'pending', ?, 'teacher', ?)
        ON DUPLICATE KEY UPDATE
          meta_json = VALUES(meta_json),
+         status = IF(status IS NULL OR status = '', 'pending', status),
          updated_by_role = 'teacher',
          updated_by_id = VALUES(updated_by_id),
          updated_at = NOW()`,

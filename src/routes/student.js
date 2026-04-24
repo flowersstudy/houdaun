@@ -46,7 +46,7 @@ const REVIEW_POINT_LIST = [
 const REVIEW_POINT_STATUS_PRIORITY = {
   learning: 0,
   completed: 1,
-  pending: 2,
+  assigned: 2,
   locked: 3,
 }
 
@@ -464,7 +464,7 @@ function resolveReviewPointStatus(courseStatus = '') {
   const safeStatus = String(courseStatus || '').trim()
 
   if (safeStatus === 'completed') return 'completed'
-  if (safeStatus === 'pending' || safeStatus === 'not_started') return 'pending'
+  if (safeStatus === 'pending' || safeStatus === 'not_started') return 'assigned'
   if (!safeStatus || safeStatus === 'failed' || safeStatus === 'aborted') return 'locked'
 
   return 'learning'
