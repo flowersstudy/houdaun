@@ -1437,14 +1437,14 @@ function isMissingTableError(error) {
 }
 
 const REVIEW_POINT_LIST = [
-  { id: 1, pointName: '??????' },
-  { id: 2, pointName: '??????' },
-  { id: 3, pointName: '??????' },
-  { id: 4, pointName: '??????' },
-  { id: 5, pointName: '??????' },
-  { id: 6, pointName: '??????' },
-  { id: 7, pointName: '??????' },
-  { id: 8, pointName: '??????' },
+  { id: 1, pointName: '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6' },
+  { id: 2, pointName: '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be' },
+  { id: 3, pointName: '\u5206\u6790\u7ed3\u6784\u4e0d\u6e05' },
+  { id: 4, pointName: '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05' },
+  { id: 5, pointName: '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be' },
+  { id: 6, pointName: '\u4f5c\u6587\u7acb\u610f\u4e0d\u51c6' },
+  { id: 7, pointName: '\u4f5c\u6587\u8bba\u8bc1\u4e0d\u6e05' },
+  { id: 8, pointName: '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545' },
 ]
 
 const REVIEW_POINT_STATUS_PRIORITY = {
@@ -2686,6 +2686,18 @@ router.post('/materials/replay', async (req, res) => {
 })
 
 // 濠电姷鏁告慨鐑藉极閸涘﹥鍙忛柣鎴ｆ閺嬩線鏌熼梻瀵割槮缁炬儳顭烽弻锝夊箛椤掍焦鍎撻梺鎼炲妼閸婂潡寮诲☉銏╂晝闁挎繂妫涢ˇ銉х磽娴ｅ搫小闁告濞婂濠氭偄閸忓皷鎷婚柣搴ｆ暩椤牊淇婃禒瀣拺闁告繂瀚崳铏圭磼鐠囪尙澧︾€殿喖顭锋俊鎼佸Ψ閵忊剝鏉搁梻浣虹《閸撴繈鏁嬪銈忚吂閺呮盯鈥旈崘顔嘉ч幖绮光偓鑼嚬婵犵數鍋犵亸娆撳窗閺嵮屽殨閻犲洦绁村Σ鍫ユ煏韫囨洖啸妞ゆ梹甯″娲嚃閳圭偓瀚涢梺鍛婃尰閻燂附绌辨繝鍐浄閻庯綆鍋嗛崢浠嬫煙閸忚偐鏆橀柛銊ヮ煼閵嗗倿鎳犻钘変壕闁稿繐顦禍楣冩⒑瑜版帗锛熺紒鈧笟鈧幏鎴︽偄閸忚偐鍘介梺鍝勫暙閸婄敻骞忛敓鐘崇厸濞达絽鎽滄晥闂佸搫鏈惄顖炲春閸曨垰绀冮柣鎰靛墰閺嗐儲淇婇悙顏勨偓鏇犳崲閸℃稑鐤鹃柣妯款嚙閽冪喓鈧箍鍎遍悧婊冾瀶閵娾晜鈷戦柛娑橈攻鐏忎即鏌ｉ埡濠傜仩妞ゆ洩缍侀、鏇㈡晲閸モ晝妲囨繝娈垮枟閿曗晠宕滃☉銏″仼婵炲樊浜濋悡鐔兼煟閺傛寧鎲搁柟鍐插暣閹顫濋悡搴＄闂佸憡甯掗敃顏堢嵁濮椻偓椤㈡瑩鎮剧仦钘夌睄濠电姷顣藉Σ鍛村垂椤栨粍濯伴柨鏇楀亾閸楅亶鏌涘┑鍡楊伌闁绘柨妫濋幃褰掑传閸曨剚鍎撳銈呮禋閸嬪棛妲?
+// 通用 PDF 上传，返回可访问 URL
+router.post('/upload/pdf', uploadMaterial.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ message: '请上传文件' })
+  const ext = path.extname(req.file.originalname).toLowerCase()
+  if (ext !== '.pdf') {
+    fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
+    return res.status(400).json({ message: '只支持 PDF 文件' })
+  }
+  const baseUrl = process.env.SERVER_BASE_URL || `http://47.105.83.180:3000`
+  res.json({ url: `${baseUrl}/uploads/${req.file.filename}` })
+})
+
 router.post('/materials/handout', uploadMaterial.single('file'), async (req, res) => {
   const { taskRowId } = req.body
   if (!taskRowId) {

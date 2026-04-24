@@ -412,7 +412,6 @@ const STAGE_DEFINITIONS = {
       {
         title: '课前准备',
         items: [
-          { id: 'theory_handout', title: '课前讲义', desc: '下载理论课课前讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
           { id: 'theory_consensus_live', title: '1v1共识：去上课', desc: '进入 1v1 共识直播课链接。', actionText: '去上课', actionType: 'live' },
           { id: 'theory_consensus_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'theory_consensus_replay', title: '去回顾', desc: '查看 1v1 共识直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
