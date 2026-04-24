@@ -578,6 +578,9 @@ async function init() {
     ['calendar_events', "ADD COLUMN course_type ENUM('diagnose','consensus','correction') DEFAULT NULL"],
     ['calendar_events', 'ADD COLUMN replay_link VARCHAR(500) DEFAULT NULL'],
     ['leave_requests', 'ADD CONSTRAINT fk_leave_reviewed_by FOREIGN KEY (reviewed_by) REFERENCES teachers(id)'],
+    ['lesson_materials', 'ADD COLUMN point_name VARCHAR(100) NULL AFTER calendar_event_id'],
+    ['lesson_materials', 'ADD COLUMN stage_key VARCHAR(30) NULL AFTER point_name'],
+    ['lesson_materials', 'ADD COLUMN task_id VARCHAR(100) NULL AFTER stage_key'],
   ]
 
   // 单独开通诊断课/刷题课记录表

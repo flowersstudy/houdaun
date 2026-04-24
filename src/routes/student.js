@@ -46,7 +46,7 @@ const REVIEW_POINT_LIST = [
 const REVIEW_POINT_STATUS_PRIORITY = {
   learning: 0,
   completed: 1,
-  assigned: 2,
+  pending: 2,
   locked: 3,
 }
 
@@ -464,6 +464,7 @@ function resolveReviewPointStatus(courseStatus = '') {
   const safeStatus = String(courseStatus || '').trim()
 
   if (safeStatus === 'completed') return 'completed'
+  if (safeStatus === 'pending' || safeStatus === 'not_started') return 'pending'
   if (!safeStatus || safeStatus === 'failed' || safeStatus === 'aborted') return 'locked'
 
   return 'learning'
@@ -501,16 +502,18 @@ async function getReviewPointStatuses(studentId) {
   })
 
   try {
-    const [assignedRows] = await pool.query(
-      `SELECT checkpoint AS pointName
-       FROM practice_assignment_tasks
-       WHERE student_id = ?
-         AND status = 'assigned'`,
+    const [orderRows] = await pool.query(
+      `SELECT DISTINCT c.name AS pointName
+       FROM orders o
+       JOIN order_items oi ON oi.order_id = o.id
+       JOIN courses c ON c.id = oi.course_id
+       WHERE o.student_id = ?
+         AND o.status = 'paid'`,
       [studentId]
     )
 
-    assignedRows.forEach((row) => {
-      applyReviewPointStatus(statusMap, normalizeCheckpointName(row.pointName), 'assigned')
+    orderRows.forEach((row) => {
+      applyReviewPointStatus(statusMap, normalizeCheckpointName(row.pointName), 'pending')
     })
   } catch (error) {
     if (!isMissingTableError(error)) {
@@ -2081,25 +2084,20 @@ router.delete('/leave/:id', async (req, res) => {
 
 // GET /api/student/materials/handouts - 获取讲义列表
 router.get('/materials/handouts', async (req, res) => {
-// GET /api/student/materials/handouts - 获取讲义列表
-router.get('/materials/handouts', async (req, res) => {
   const studentId = req.user.id
-  const taskId = req.query.taskId || null
-  const pointName = req.query.pointName || null
+  const eventId = req.query.eventId ? Number(req.query.eventId) : null
 
   try {
     const where = ['lm.student_id = ?', "lm.material_type = 'handout'"]
     const params = [studentId]
 
-    if (taskId && pointName) {
-      where.push('lm.task_id = ?')
-      where.push('lm.point_name = ?')
-      params.push(taskId, pointName)
+    if (eventId) {
+      where.push('lm.calendar_event_id = ?')
+      params.push(eventId)
     }
 
     const [rows] = await pool.query(
       `SELECT lm.id, lm.title, lm.file_name, lm.created_at,
-              lm.task_id, lm.point_name, lm.stage_key,
               ce.id AS event_id, ce.title AS event_title, ce.date AS event_date
        FROM lesson_materials lm
        LEFT JOIN calendar_events ce ON ce.id = lm.calendar_event_id
@@ -2113,9 +2111,6 @@ router.get('/materials/handouts', async (req, res) => {
       title: row.title || row.file_name || '讲义',
       fileName: row.file_name || '',
       createdAt: row.created_at,
-      taskId: row.task_id || null,
-      pointName: row.point_name || '',
-      stageKey: row.stage_key || '',
       eventId: row.event_id,
       eventTitle: row.event_title || '',
       eventDate: row.event_date || '',

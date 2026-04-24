@@ -15,7 +15,7 @@ const {
   getFeedbackSourceLabel,
   mapStudentFeedbackRow,
 } = require('../lib/studentFeedback')
-const { normalizeCheckpointName } = require('../lib/checkpoint')
+const { normalizeCheckpointName, ALL_CHECKPOINTS } = require('../lib/checkpoint')
 const { UPLOADS_DIR } = require('../lib/uploads')
 
 router.use(auth('teacher'))
@@ -2450,6 +2450,16 @@ router.get('/students/:studentId/info', async (req, res) => {
        LIMIT 20`,
       [studentId]
     )
+    const [checkpointRows] = await pool.query(
+      `SELECT DISTINCT point_name FROM student_learning_path_tasks
+       WHERE student_id = ? AND point_name IS NOT NULL AND point_name != ''`,
+      [studentId]
+    )
+    const activeCheckpoints = new Set(checkpointRows.map((r) => r.point_name))
+    const checkpoints = ALL_CHECKPOINTS.map((name) => ({
+      name,
+      hasData: activeCheckpoints.has(name),
+    }))
     res.json({
       student: student ?? null,
       notes,
@@ -2460,6 +2470,7 @@ router.get('/students/:studentId/info', async (req, res) => {
         ...course,
         name: normalizeCheckpointName(course.name),
       })),
+      checkpoints,
       sessionCount: Number(sessionStats?.session_count ?? 0),
       totalHours: Number(sessionStats?.total_hours ?? 0),
       teamTeachers,
@@ -2801,7 +2812,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       ? await conn.query(
           `SELECT id, student_id
            FROM practice_assignment_tasks
-           WHERE id = ? AND status = 'pending'
+           WHERE id = ?
            LIMIT 1`,
           [taskId],
         )
