@@ -1180,6 +1180,27 @@ router.get('/point-learning-summary', async (req, res) => {
         return `${right.date}`.localeCompare(`${left.date}`)
       })[0] || null
 
+    // 最近一次视频回放时间
+    const videoSessionSql = courseId
+      ? `SELECT ended_at FROM study_sessions
+         WHERE student_id = ? AND (course_id = ? OR point_name = ?)
+           AND session_type = 'video' AND ended_at IS NOT NULL
+         ORDER BY ended_at DESC LIMIT 1`
+      : `SELECT ended_at FROM study_sessions
+         WHERE student_id = ? AND point_name = ?
+           AND session_type = 'video' AND ended_at IS NOT NULL
+         ORDER BY ended_at DESC LIMIT 1`
+    const videoParams = courseId ? [studentId, courseId, pointName] : [studentId, pointName]
+    const [[videoRow]] = await pool.query(videoSessionSql, videoParams)
+
+    // 最近一次作业提交时间
+    const [[submissionRow]] = await pool.query(
+      `SELECT created_at FROM pdf_submissions
+       WHERE student_id = ? AND point_name = ?
+       ORDER BY created_at DESC LIMIT 1`,
+      [studentId, pointName]
+    )
+
     res.json({
       pointName,
       courseId,
@@ -1202,6 +1223,8 @@ router.get('/point-learning-summary', async (req, res) => {
             endedAt: latestSession.endedAt,
           }
         : null,
+      lastPlaybackAt: videoRow ? toIsoString(toValidDate(videoRow.ended_at)) : null,
+      lastHomeworkSubmitAt: submissionRow ? toIsoString(toValidDate(submissionRow.created_at)) : null,
     })
   } catch (err) {
     res.status(500).json({ message: err.message })

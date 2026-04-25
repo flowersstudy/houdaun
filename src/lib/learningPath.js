@@ -280,6 +280,13 @@ function getStageDefinition(stageKey, stateRows = []) {
     }
   }
 
+  if (stageKey === 'training') {
+    const dynamicDefinition = buildDynamicTrainingStage(stateRows)
+    if (dynamicDefinition) {
+      return dynamicDefinition
+    }
+  }
+
   if (stageKey === 'drill' || stageKey === 'exam') {
     const dynamicDefinition = buildDynamicResourceStage(stageKey, stateRows)
     if (dynamicDefinition) {
@@ -344,40 +351,56 @@ const DRILL_ITEMS = [
   },
 ]
 
-function buildTrainingRound(roundNumber) {
+function buildTrainingRound(roundNumber, practiceItem = null) {
   const taskPrefix = `training_round_${roundNumber}`
-  return [
+  const items = [
     {
       id: `${taskPrefix}_question`,
       title: '题目',
       desc: '查看本题实训题目 PDF。',
       actionText: '查看题目',
       actionType: 'document',
+      ...(practiceItem && practiceItem.preClassUrl
+        ? { resource: buildResource('pdf', practiceItem.displayTitle || practiceItem.questionTitle || '题目', practiceItem.preClassUrl) }
+        : {}),
     },
     {
       id: `${taskPrefix}_explain_video`,
-      title: '视频讲解',
+      title: '录播课',
       desc: '查看 PDF 文档及视频链接，并完成课程星级评价。',
-      actionText: '看讲解',
+      actionText: '看录播',
       actionType: 'video',
+      ...(practiceItem && practiceItem.videoId
+        ? { resource: buildResource('video', practiceItem.displayTitle || practiceItem.questionTitle || '录播课', '', practiceItem.videoId) }
+        : {}),
     },
     {
       id: `${taskPrefix}_homework_upload`,
       title: '上传作业',
-      desc: '看完视频讲解后提交本题作业，支持 PDF 或图片。',
+      desc: '看完录播课后提交本题作业，支持 PDF 或图片。',
       actionText: '去上传',
       actionType: 'upload',
       requireDoneTaskId: `${taskPrefix}_explain_video`,
-      blockedToast: '看完视频讲解后才可以上传作业',
+      blockedToast: '看完录播课后才可以上传作业',
     },
     {
       id: `${taskPrefix}_homework_feedback`,
       title: '批改反馈',
-      desc: '查看本题作业批改反馈；有疑问可去“找老师”提问。',
+      desc: '查看本题作业批改反馈；有疑问可去”找老师”提问。',
       actionText: '查看反馈',
       actionType: 'feedback',
       secondaryActionText: '去提问',
       secondaryActionType: 'askTeacher',
+    },
+    {
+      id: `${taskPrefix}_analysis`,
+      title: '刷题解析',
+      desc: '查看本题刷题解析 PDF。',
+      actionText: '查看解析',
+      actionType: 'document',
+      ...(practiceItem && practiceItem.analysisUrl
+        ? { resource: buildResource('pdf', practiceItem.displayTitle || practiceItem.questionTitle || '刷题解析', practiceItem.analysisUrl) }
+        : {}),
     },
     {
       id: `${taskPrefix}_reflection_upload`,
@@ -394,11 +417,41 @@ function buildTrainingRound(roundNumber) {
       actionType: 'feedback',
     },
   ]
+  return items
 }
 
 const TRAINING_ROUND_ITEMS = [1, 2, 3].reduce((items, roundNumber) => (
   items.concat(buildTrainingRound(roundNumber))
 ), [])
+
+function buildDynamicTrainingStage(stateRows = []) {
+  const payload = getTheoryConfigPayload(stateRows)
+  const practiceItems = Array.isArray(payload.practiceItems)
+    ? payload.practiceItems
+      .map((item) => normalizeAssignmentResourceItem(item))
+      .filter((item) => item.id || item.displayTitle || item.questionTitle || item.preClassUrl || item.videoId || item.analysisUrl)
+    : []
+
+  if (!practiceItems.length) return null
+
+  const roundItems = practiceItems.flatMap((practiceItem, index) => (
+    buildTrainingRound(index + 1, practiceItem)
+  ))
+
+  return {
+    ...STAGE_DEFINITIONS.training,
+    stageSubtitle: `按 ${practiceItems.length} 轮完成”题目、录播课、上传作业、批改反馈、刷题解析、学生心得体会、批改反馈”的实训闭环。`,
+    groups: [
+      {
+        title: '实训路径',
+        items: [
+          { id: 'training_timer', title: '计时器', desc: '设置并开始本次实训计时。', actionType: 'timer' },
+          ...roundItems,
+        ],
+      },
+    ],
+  }
+}
 
 function buildTheoryRound(roundNumber) {
   const label = `第 ${roundNumber} 轮`
