@@ -273,6 +273,22 @@ async function syncStudentCourseProgress(studentId, pointName, executor = pool) 
     [summary.progressPercent, courseStatus, studentId, course.id]
   )
 
+  if (courseStatus === 'completed') {
+    const [[nextCourse]] = await executor.query(
+      `SELECT id FROM student_courses
+       WHERE student_id = ? AND status = 'pending'
+       ORDER BY sort_order ASC, id ASC
+       LIMIT 1`,
+      [studentId]
+    )
+    if (nextCourse) {
+      await executor.query(
+        `UPDATE student_courses SET status = 'in_progress' WHERE id = ?`,
+        [nextCourse.id]
+      )
+    }
+  }
+
   return {
     progress: summary.progressPercent,
     status: courseStatus,

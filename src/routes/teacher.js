@@ -309,7 +309,7 @@ async function findOrCreateCourse(conn, courseName, subject = '') {
   }
 }
 
-async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpointName, theoryLessons = []) {
+async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpointName, theoryLessons = [], sortOrder = 0) {
   const safeCheckpointName = normalizeCheckpointName(checkpointName)
   if (!safeCheckpointName) return null
 
@@ -326,17 +326,20 @@ async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpo
 
   const course = await findOrCreateCourse(conn, safeCheckpointName, studentRow && studentRow.subject)
 
+  const initialStatus = sortOrder === 0 ? 'in_progress' : 'pending'
+
   await conn.query(
-    `INSERT INTO student_courses (student_id, course_id, progress, status)
-     VALUES (?, ?, 0, 'in_progress')
+    `INSERT INTO student_courses (student_id, course_id, progress, status, sort_order)
+     VALUES (?, ?, 0, ?, ?)
      ON DUPLICATE KEY UPDATE
-       status = 'in_progress',
+       status = VALUES(status),
+       sort_order = VALUES(sort_order),
        progress = CASE
          WHEN status IN ('completed', 'failed') OR progress >= 100 THEN 0
          ELSE LEAST(progress, 99)
        END,
        created_at = NOW()`,
-    [studentId, course.id],
+    [studentId, course.id, initialStatus, sortOrder],
   )
 
   await ensureStudyPlan(
@@ -2694,8 +2697,8 @@ router.post('/upload/pdf', uploadMaterial.single('file'), async (req, res) => {
     fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
     return res.status(400).json({ message: '只支持 PDF 文件' })
   }
-  const baseUrl = process.env.SERVER_BASE_URL || `http://47.105.83.180:3000`
-  res.json({ url: `${baseUrl}/uploads/${req.file.filename}` })
+  const url = `/uploads/${req.file.filename}`
+  res.json({ url, storedFile: req.file.filename })
 })
 
 router.post('/materials/handout', uploadMaterial.single('file'), async (req, res) => {
@@ -2751,6 +2754,8 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
 
   const checkpointName = normalizeCheckpointName(req.body.checkpointName || req.body.checkpoint || '')
   if (!checkpointName) return res.status(400).json({ message: '????' })
+
+  const sortOrder = Number(req.body.sortOrder) >= 0 ? Number(req.body.sortOrder) : 0
 
   const version = String(req.body.version || '').trim()
   const versionName = String(req.body.versionName || '').trim()
@@ -2892,7 +2897,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
     }
 
     await ensureTeacherStudentRelation(conn, selectedTeacher.id, studentId)
-    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, theoryLessons)
+    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, theoryLessons, sortOrder)
     await ensureChatRoom(conn, selectedTeacher.id, studentId)
     await conn.query(
       `INSERT INTO student_team_members (student_id, teacher_id, role, status)

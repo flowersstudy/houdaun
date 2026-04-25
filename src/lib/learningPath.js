@@ -233,12 +233,12 @@ function buildDynamicAssignmentStageItems(stageKey, items = [], label = '') {
 }
 
 function buildDynamicResourceStage(stageKey, stateRows = []) {
-  if (!['drill', 'exam'].includes(stageKey)) {
+  if (stageKey !== 'exam') {
     return null
   }
 
   const payload = getTheoryConfigPayload(stateRows)
-  const sourceItems = stageKey === 'drill' ? payload.practiceItems : payload.examItems
+  const sourceItems = payload.examItems
   const items = Array.isArray(sourceItems)
     ? sourceItems
       .map((item) => normalizeAssignmentResourceItem(item))
@@ -287,7 +287,7 @@ function getStageDefinition(stageKey, stateRows = []) {
     }
   }
 
-  if (stageKey === 'drill' || stageKey === 'exam') {
+  if (stageKey === 'exam') {
     const dynamicDefinition = buildDynamicResourceStage(stageKey, stateRows)
     if (dynamicDefinition) {
       return dynamicDefinition
