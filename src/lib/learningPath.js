@@ -3,6 +3,8 @@ const THEORY_REPEAT_COUNT = 3
 
 const THEORY_CONFIG_STAGE_KEY = 'theory_config'
 const THEORY_CONFIG_TASK_ID = 'assignment_config'
+const DRILL_CONFIG_STAGE_KEY = 'drill_config'
+const DRILL_CONFIG_TASK_ID = 'weekly_config'
 
 function buildResource(resourceType = '', title = '', url = '', videoId = '') {
   return {
@@ -35,6 +37,149 @@ function getTheoryConfigPayload(stateRows = []) {
   const configRow = stateRows.find((row) => row.stage_key === THEORY_CONFIG_STAGE_KEY && row.task_id === THEORY_CONFIG_TASK_ID)
   if (!configRow) return {}
   return readMeta(configRow.meta_json)
+}
+
+function getDrillConfigPayload(stateRows = []) {
+  const configRow = stateRows.find((row) => row.stage_key === DRILL_CONFIG_STAGE_KEY && row.task_id === DRILL_CONFIG_TASK_ID)
+  if (!configRow) return {}
+  return readMeta(configRow.meta_json)
+}
+
+function normalizeDrillScheduleItem(item = {}) {
+  return {
+    id: String(item.id || '').trim(),
+    weekLabel: String(item.weekLabel || '').trim(),
+    title: String(item.title || '').trim(),
+    liveAt: String(item.liveAt || '').trim(),
+    dueAt: String(item.dueAt || '').trim(),
+    remark: String(item.remark || '').trim(),
+  }
+}
+
+function buildDrillScheduleData(scheduleItems = []) {
+  return scheduleItems.reduce((result, item) => {
+    const liveAt = String(item.liveAt || '').trim()
+    if (liveAt) {
+      const [liveDate, liveTime] = liveAt.split(/\s+/)
+      if (liveDate) {
+        if (!result[liveDate]) result[liveDate] = []
+        result[liveDate].push({
+          label: item.title || '直播刷题',
+          type: 'class',
+          note: liveTime || '',
+        })
+      }
+    }
+
+    const dueAt = String(item.dueAt || '').trim()
+    if (dueAt) {
+      const [dueDate, dueTime] = dueAt.split(/\s+/)
+      if (dueDate) {
+        if (!result[dueDate]) result[dueDate] = []
+        result[dueDate].push({
+          label: `${item.weekLabel || ''} 作业截止`.trim() || '作业截止',
+          type: 'hw',
+          note: dueTime || '',
+        })
+      }
+    }
+
+    return result
+  }, {})
+}
+
+function buildDynamicDrillDefinition(stateRows = []) {
+  const payload = getDrillConfigPayload(stateRows)
+  const hasConfig = payload && Object.keys(payload).length > 0
+  if (!hasConfig) {
+    return null
+  }
+
+  const title = String(payload.title || '').trim() || '直播刷题'
+  const question = payload.question && typeof payload.question === 'object' ? payload.question : {}
+  const handout = payload.handout && typeof payload.handout === 'object' ? payload.handout : {}
+  const qaSummary = payload.qaSummary && typeof payload.qaSummary === 'object' ? payload.qaSummary : {}
+  const report = payload.report && typeof payload.report === 'object' ? payload.report : {}
+  const liveLink = String(payload.liveLink || '').trim()
+  const replayLink = String(payload.replayLink || '').trim()
+  const scheduleItems = Array.isArray(payload.scheduleItems)
+    ? payload.scheduleItems
+      .map((item) => normalizeDrillScheduleItem(item))
+      .filter((item) => item.title || item.liveAt || item.dueAt)
+    : []
+
+  const liveResource = buildResource('link', `${title}直播`, '', '')
+  liveResource.liveUrl = liveLink
+
+  const replayResource = buildResource('link', `${title}回放`, '', '')
+  replayResource.replayUrl = replayLink
+
+  return {
+    ...STAGE_DEFINITIONS.drill,
+    stageSubtitle: '先开启正计时，再按顺序完成题目、上传作业、AI批改、去上课、去回顾、讲义、群内答疑总结，最后查看刷题报告总结。',
+    calendarTitle: '日程安排',
+    scheduleData: buildDrillScheduleData(scheduleItems),
+    groups: [
+      {
+        title: '刷题流程',
+        items: [
+          { id: 'drill_countdown', title: '计时器', desc: '开始本次刷题计时。', actionType: 'timer' },
+          {
+            id: 'drill_question',
+            title: '题目',
+            desc: '查看当前刷题题目 PDF。',
+            actionText: '查看题目',
+            actionType: 'document',
+            ...(question.url ? { resource: buildResource('pdf', question.fileName || '刷题题目', question.url) } : {}),
+          },
+          { id: 'drill_upload', title: '上传作业', desc: '上传本次刷题作业，支持 PDF 或图片。', actionText: '去上传', actionType: 'upload' },
+          { id: 'drill_ai_review', title: 'AI批改', desc: '提交后进入 AI 批改流程。', actionText: '查看批改', actionType: 'processing' },
+          {
+            id: 'drill_live',
+            title: '去上课',
+            desc: '进入直播课链接。',
+            actionText: '去上课',
+            actionType: 'live',
+            secondaryActionText: '去提问',
+            secondaryActionType: 'askTeacher',
+            resource: liveResource,
+          },
+          {
+            id: 'drill_replay',
+            title: '去回顾',
+            desc: '查看直播课回放链接。',
+            actionText: '去回顾',
+            actionType: 'replay',
+            resource: replayResource,
+          },
+          {
+            id: 'drill_handout',
+            title: '讲义',
+            desc: '查看本次直播刷题讲义文件。',
+            actionText: '查看讲义',
+            actionType: 'document',
+            ...(handout.url ? { resource: buildResource('pdf', handout.fileName || '刷题讲义', handout.url) } : {}),
+          },
+          {
+            id: 'drill_qa_summary',
+            title: '群内答疑总结',
+            desc: '查看群内答疑总结文件。',
+            actionText: '查看总结',
+            actionType: 'document',
+            ...(qaSummary.url ? { resource: buildResource('pdf', qaSummary.fileName || '答疑总结', qaSummary.url) } : {}),
+          },
+          {
+            id: 'drill_monthly_report',
+            title: '刷题报告总结',
+            desc: '查看老师上传的刷题报告文件。',
+            actionText: '查看报告',
+            actionType: 'document',
+            ...(report.url ? { resource: buildResource('pdf', report.fileName || '刷题报告', report.url) } : {}),
+          },
+        ],
+      },
+    ],
+  }
 }
 
 function buildDynamicTheoryDefinition(stateRows = []) {
@@ -375,6 +520,9 @@ function buildDynamicExamStage(stateRows = []) {
 }
 
 function getStageDefinition(stageKey, stateRows = []) {
+  if (stageKey === 'drill') {
+    return buildDynamicDrillDefinition(stateRows) || STAGE_DEFINITIONS.drill
+  }
   return STAGE_DEFINITIONS[stageKey] || STAGE_DEFINITIONS.diagnose
 }
 
@@ -865,7 +1013,7 @@ function getFeedbackTaskIdForUploadTask(taskId = '') {
     theory_mindmap_upload: 'theory_mindmap_feedback',
     theory_correction_upload: 'theory_correction_review',
     exam_homework_upload: 'exam_feedback',
-    drill_upload: 'drill_qa_summary',
+    drill_upload: 'drill_ai_review',
   }
 
   if (fixedMap[taskId]) return fixedMap[taskId]
@@ -891,7 +1039,7 @@ function getUploadTaskIdForFeedbackTask(taskId = '') {
     theory_mindmap_feedback: 'theory_mindmap_upload',
     theory_correction_review: 'theory_correction_upload',
     exam_feedback: 'exam_homework_upload',
-    drill_qa_summary: 'drill_upload',
+    drill_ai_review: 'drill_upload',
   }
 
   if (fixedMap[taskId]) return fixedMap[taskId]
@@ -924,6 +1072,227 @@ function isUploadTask(stageKey, taskId, stateRows = []) {
 function isFeedbackTask(stageKey, taskId, stateRows = []) {
   const taskDefinition = findTaskDefinition(stageKey, taskId, stateRows)
   return !!(taskDefinition && taskDefinition.actionType === 'feedback')
+}
+
+function buildDynamicTheoryDefinition(stateRows = []) {
+  const payload = getTheoryConfigPayload(stateRows)
+  const theoryLessons = Array.isArray(payload.theoryLessons)
+    ? payload.theoryLessons
+      .map((lesson) => normalizeTheoryLesson(lesson))
+      .filter((lesson) => lesson.videoId || lesson.preClassUrl || lesson.analysisUrl)
+    : []
+
+  if (!theoryLessons.length) {
+    return null
+  }
+
+  const roundGroups = theoryLessons.map((lesson, index) => {
+    const roundNumber = index + 1
+    const roundLabel = `第${roundNumber}轮`
+    const titlePrefix = lesson.title || roundLabel
+    const lessonContext = {
+      roundNumber,
+      roundLabel,
+      lessonTitle: titlePrefix,
+      knowledgeTitle: lesson.knowledgeTitle,
+      questionTitle: lesson.noteText || lesson.title || lesson.knowledgeTitle || lesson.scope,
+    }
+
+    const items = []
+
+    if (lesson.preClassUrl) {
+      items.push({
+        id: `theory_round_${roundNumber}_handout`,
+        title: '课前讲义',
+        desc: `${roundLabel}下载课前讲义 PDF。`,
+        actionText: '查看讲义',
+        actionType: 'document',
+        resource: buildResource('pdf', `${titlePrefix}课前讲义`, lesson.preClassUrl),
+      })
+    }
+
+    if (lesson.videoId) {
+      items.push({
+        id: `theory_round_${roundNumber}_recorded`,
+        title: '理论课',
+        desc: `${roundLabel}观看理论课录播，返回后可选星级评价。`,
+        actionText: '看录播',
+        actionType: 'video',
+        secondaryActionText: '找老师',
+        secondaryActionType: 'askTeacher',
+        resource: buildResource('video', titlePrefix, '', lesson.videoId),
+        lessonContext,
+      })
+    }
+
+    if (lesson.analysisUrl || lesson.preClassUrl) {
+      items.push({
+        id: `theory_round_${roundNumber}_homework_pdf`,
+        title: '课后作业',
+        desc: `${roundLabel}下载课后作业 PDF。`,
+        actionText: '下载作业',
+        actionType: 'document',
+        resource: buildResource('pdf', `${titlePrefix}课后作业`, lesson.analysisUrl || lesson.preClassUrl),
+      })
+    }
+
+    if (lesson.videoId) {
+      items.push({
+        id: `theory_round_${roundNumber}_explain_video`,
+        title: '视频讲解',
+        desc: `${roundLabel}观看视频讲解，返回后可选星级评价。`,
+        actionText: '看讲解',
+        actionType: 'video',
+        resource: buildResource('video', `${titlePrefix}视频讲解`, '', lesson.videoId),
+      })
+    }
+
+    return {
+      title: roundLabel,
+      items,
+    }
+  })
+
+  return {
+    ...STAGE_DEFINITIONS.theory,
+    stageSubtitle: `按“1v1共识—理论课（${theoryLessons.length}轮）—思维导图—1v1纠偏”顺序完成理论阶段学习。`,
+    groups: [
+      {
+        title: '1v1共识',
+        items: [
+          { id: 'theory_consensus_live', title: '1v1共识：去上课', desc: '进入 1v1 共识直播课链接。', actionText: '去上课', actionType: 'live' },
+          { id: 'theory_consensus_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+          { id: 'theory_consensus_replay', title: '去回顾', desc: '查看 1v1 共识直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+          { id: 'theory_consensus_handout', title: '课后讲义', desc: '查看本次共识课程课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
+        ],
+      },
+      ...roundGroups,
+      {
+        title: '思维导图',
+        items: [
+          { id: 'theory_mindmap_upload', title: '上传思维导图', desc: '支持上传 PDF 或图片，可反复重新上传。', actionText: '去上传', actionType: 'upload' },
+          { id: 'theory_mindmap_feedback', title: '老师点评', desc: '查看思维导图老师点评。', actionText: '查看点评', actionType: 'feedback' },
+        ],
+      },
+      {
+        title: '1v1纠偏',
+        items: [
+          { id: 'theory_correction_live', title: '1v1纠偏：去上课', desc: '进入 1v1 纠偏直播课链接。', actionText: '去上课', actionType: 'live' },
+          { id: 'theory_correction_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
+          { id: 'theory_correction_replay', title: '去回顾', desc: '查看 1v1 纠偏直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+          { id: 'theory_correction_handout', title: '课后讲义', desc: '查看本次纠偏课程课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
+          { id: 'theory_correction_upload', title: '作业上传', desc: '上传纠偏课后作业。', actionText: '去上传', actionType: 'upload' },
+          { id: 'theory_correction_review', title: '批改反馈', desc: '查看纠偏课作业批改反馈。', actionText: '查看反馈', actionType: 'feedback' },
+        ],
+      },
+    ],
+  }
+}
+
+function buildDynamicTrainingStage(stateRows = []) {
+  const payload = getTheoryConfigPayload(stateRows)
+  const practiceItems = Array.isArray(payload.practiceItems)
+    ? payload.practiceItems
+      .map((item) => normalizeAssignmentResourceItem(item))
+      .filter((item) => item.id || item.displayTitle || item.questionTitle || item.preClassUrl || item.videoId || item.analysisUrl)
+    : []
+
+  if (!practiceItems.length) return null
+
+  const roundItems = practiceItems.flatMap((practiceItem, index) => (
+    buildTrainingRound(index + 1, practiceItem)
+  ))
+
+  return {
+    ...STAGE_DEFINITIONS.training,
+    stageSubtitle: `按 ${practiceItems.length} 轮完成“题目、视频讲解、上传作业、批改反馈、刷题解析、学生心得体会、批改反馈”的实训闭环。`,
+    groups: [
+      {
+        title: '实训路径',
+        items: [
+          { id: 'training_timer', title: '计时器', desc: '设置并开始本次实训计时。', actionType: 'timer' },
+          ...roundItems,
+        ],
+      },
+    ],
+  }
+}
+
+function buildDynamicExamStage(stateRows = []) {
+  const payload = getTheoryConfigPayload(stateRows)
+  const normalizeItems = (sourceItems = []) => (
+    Array.isArray(sourceItems)
+      ? sourceItems
+        .map((item) => normalizeAssignmentResourceItem(item))
+        .filter((item) => (
+          item.id
+          || item.kind
+          || item.displayTitle
+          || item.questionTitle
+          || item.rawTitle
+          || item.videoId
+          || item.preClassUrl
+          || item.analysisUrl
+        ))
+      : []
+  )
+
+  const examItems = normalizeItems(payload.examItems)
+  const remedialItems = normalizeItems(payload.remedialItems)
+
+  if (!examItems.length && !remedialItems.length) {
+    return null
+  }
+
+  const primaryExamItem = examItems[0] || null
+  const extraExamItems = examItems.length > 1 ? examItems.slice(1) : []
+  const items = primaryExamItem
+    ? buildDynamicExamSequenceItems('exam', primaryExamItem, {
+        includeCountdown: true,
+        fixedTaskIds: true,
+      })
+    : [{ id: 'exam_countdown', title: '倒计时显示器', desc: '设置并开始本次测试倒计时。', actionType: 'timer' }]
+
+  extraExamItems.forEach((item, index) => {
+    items.push(...buildDynamicExamSequenceItems(`exam_round_${index + 2}`, item, {
+      sequenceLabel: `测试${index + 2}·`,
+    }))
+  })
+
+  remedialItems.forEach((item, index) => {
+    items.push(...buildDynamicExamSequenceItems(`exam_remedial_${index + 1}`, item, {
+      sequenceLabel: `补考${index + 1}·`,
+    }))
+  })
+
+  return {
+    ...STAGE_DEFINITIONS.exam,
+    stageSubtitle: remedialItems.length > 0
+      ? `按顺序完成测试任务，并继续完成 ${remedialItems.length} 个补考内容。`
+      : STAGE_DEFINITIONS.exam.stageSubtitle,
+    groups: [
+      {
+        title: '测试路径',
+        items,
+      },
+    ],
+  }
+}
+
+function getStageDefinition(stageKey, stateRows = []) {
+  if (stageKey === 'theory') {
+    return buildDynamicTheoryDefinition(stateRows) || STAGE_DEFINITIONS.theory
+  }
+  if (stageKey === 'training') {
+    return buildDynamicTrainingStage(stateRows) || STAGE_DEFINITIONS.training
+  }
+  if (stageKey === 'exam') {
+    return buildDynamicExamStage(stateRows) || STAGE_DEFINITIONS.exam
+  }
+  if (stageKey === 'drill') {
+    return buildDynamicDrillDefinition(stateRows) || STAGE_DEFINITIONS.drill
+  }
+  return STAGE_DEFINITIONS[stageKey] || STAGE_DEFINITIONS.diagnose
 }
 
 module.exports = {

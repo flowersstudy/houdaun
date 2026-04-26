@@ -1,4 +1,4 @@
-const router = require('express').Router()
+﻿const router = require('express').Router()
 const path = require('path')
 const fs = require('fs')
 const multer = require('multer')
@@ -475,6 +475,14 @@ function mapTeamRoleLabel(role) {
   }
 }
 
+function normalizeManagedTeamRole(role) {
+  const safeRole = String(role || '').trim()
+  if (safeRole === 'coach' || safeRole === 'diagnosis' || safeRole === 'manager') {
+    return safeRole
+  }
+  return ''
+}
+
 async function ensureTeacherStudentRelation(conn, teacherId, studentId, subject = '', grade = '') {
   if (!teacherId || !studentId) return
 
@@ -503,6 +511,87 @@ async function ensureChatRoom(conn, teacherId, studentId) {
      ON DUPLICATE KEY UPDATE teacher_id = VALUES(teacher_id)`,
     [teacherId, studentId],
   )
+}
+
+async function removeTeacherStudentRelationIfUnused(conn, teacherId, studentId, ignoredRole = '') {
+  if (!teacherId || !studentId) return
+
+  const params = [studentId, teacherId]
+  let ignoredSql = ''
+  if (ignoredRole) {
+    ignoredSql = 'AND role <> ?'
+    params.push(ignoredRole)
+  }
+
+  const [[activeMember]] = await conn.query(
+    `SELECT 1
+     FROM student_team_members
+     WHERE student_id = ?
+       AND teacher_id = ?
+       AND status = 'assigned'
+       ${ignoredSql}
+     LIMIT 1`,
+    params,
+  )
+
+  if (!activeMember) {
+    await conn.query(
+      'DELETE FROM teacher_students WHERE teacher_id = ? AND student_id = ?',
+      [teacherId, studentId],
+    )
+  }
+}
+
+async function upsertTeamMemberAssignment(conn, studentId, teacherId, role) {
+  if (!teacherId || !studentId || !role) return
+
+  const [[previousRow]] = await conn.query(
+    `SELECT teacher_id
+     FROM student_team_members
+     WHERE student_id = ? AND role = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [studentId, role],
+  )
+
+  await conn.query(
+    `INSERT INTO student_team_members (student_id, teacher_id, role, status)
+     VALUES (?, ?, ?, 'assigned')
+     ON DUPLICATE KEY UPDATE
+       teacher_id = VALUES(teacher_id),
+       status = 'assigned',
+       assigned_at = NOW()`,
+    [studentId, teacherId, role],
+  )
+
+  await ensureTeacherStudentRelation(conn, teacherId, studentId)
+  await ensureChatRoom(conn, teacherId, studentId)
+
+  if (previousRow && Number(previousRow.teacher_id) !== Number(teacherId)) {
+    await removeTeacherStudentRelationIfUnused(conn, Number(previousRow.teacher_id), studentId, role)
+  }
+}
+
+async function clearTeamMemberAssignment(conn, studentId, role) {
+  if (!studentId || !role) return
+
+  const [[previousRow]] = await conn.query(
+    `SELECT teacher_id
+     FROM student_team_members
+     WHERE student_id = ? AND role = ?
+     LIMIT 1
+     FOR UPDATE`,
+    [studentId, role],
+  )
+
+  await conn.query(
+    'DELETE FROM student_team_members WHERE student_id = ? AND role = ?',
+    [studentId, role],
+  )
+
+  if (previousRow) {
+    await removeTeacherStudentRelationIfUnused(conn, Number(previousRow.teacher_id), studentId)
+  }
 }
 
 function formatDate(value) {
@@ -644,63 +733,29 @@ async function getPendingReplyItems(teacherId) {
 }
 
 async function getPendingAssignItems(teacherId) {
-  const [taskRows] = await pool.query(
-    `SELECT pat.id, pat.student_id, pat.checkpoint, pat.detail, s.name AS student_name, cr.id AS contact_id
-     FROM practice_assignment_tasks pat
-     JOIN students s ON s.id = pat.student_id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = pat.student_id
-     WHERE pat.teacher_id = ? AND pat.status = 'pending'
-     ORDER BY pat.created_at ASC
-     LIMIT 20`,
-    [teacherId, teacherId],
-  )
+  void teacherId
 
-  const [unassignedRows] = await pool.query(
-    `SELECT s.id AS student_id, s.name AS student_name, cr.id AS contact_id
+  const [rows] = await pool.query(
+    `SELECT s.id AS student_id, s.name AS student_name
      FROM students s
-     JOIN teacher_students ts ON ts.teacher_id = ? AND ts.student_id = s.id
-     LEFT JOIN chat_rooms cr ON cr.teacher_id = ? AND cr.student_id = s.id
-     WHERE NOT EXISTS (
-       SELECT 1 FROM student_courses sc WHERE sc.student_id = s.id
-     )
-       AND NOT EXISTS (
-         SELECT 1 FROM practice_assignment_tasks pat
-         WHERE pat.teacher_id = ? AND pat.student_id = s.id AND pat.status = 'pending'
-       )
+     LEFT JOIN student_team_members stm
+       ON stm.student_id = s.id
+      AND stm.role = 'coach'
+      AND stm.status = 'assigned'
+     WHERE s.status = 'new'
+       AND stm.id IS NULL
      ORDER BY s.created_at DESC, s.id DESC
-     LIMIT ?`,
-    [teacherId, teacherId, teacherId, Math.max(0, 20 - taskRows.length)],
+     LIMIT 20`,
+    [],
   )
 
-  const rows = [
-    ...taskRows,
-    ...unassignedRows.map((row) => ({
-      ...row,
-      id: `student_${row.student_id}`,
-      checkpoint: '',
-      detail: '',
-    })),
-  ]
-
   return rows.map((row) => ({
-    id: `assign_${row.id}`,
+    id: `assign_student_${row.student_id}`,
     name: row.student_name,
-    subtitle: `${normalizeCheckpointName(row.checkpoint || '\u5b66\u4e60\u5361\u70b9')} \u00b7 ${row.detail || '\u5f85\u5206\u914d\u7ec3\u4e60\u9898'}`,
-    actionLabel: '\u53bb\u5206\u914d',
-    avatar: avatar(row.student_name),
-    color: colorById(row.student_id),
-    contactId: row.contact_id ? String(row.contact_id) : undefined,
-    studentId: String(row.student_id),
-  }))
-
-  return rows.map((row) => ({
-    id: `assign_${row.id}`,
-    name: row.student_name,
-    subtitle: `${normalizeCheckpointName(row.checkpoint || '学习卡点')} · ${row.detail || '待分配练习题'}`,
+    subtitle: '待分配带教老师',
     actionLabel: '去分配',
     avatar: avatar(row.student_name),
     color: colorById(row.student_id),
-    contactId: row.contact_id ? String(row.contact_id) : undefined,
     studentId: String(row.student_id),
   }))
 }
@@ -2490,6 +2545,7 @@ router.get('/students/:studentId/info', async (req, res) => {
        FROM student_team_members stm
        JOIN teachers t ON t.id = stm.teacher_id
        WHERE stm.student_id = ?
+         AND stm.status = 'assigned'
        ORDER BY FIELD(stm.role, 'coach', 'diagnosis', 'manager', 'principal'), t.id`,
       [studentId]
     )
