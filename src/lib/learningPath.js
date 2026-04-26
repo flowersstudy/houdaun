@@ -161,7 +161,7 @@ function buildDynamicTheoryDefinition(stateRows = []) {
 
   return {
     ...STAGE_DEFINITIONS.theory,
-    stageSubtitle: `按"1v1共识—理论课（${theoryLessons.length}轮）—1v1纠偏"顺序完成理论阶段学习。`,
+    stageSubtitle: `按"1v1共识—理论课（${theoryLessons.length}轮）—思维导图—1v1纠偏"顺序完成理论阶段学习。`,
     groups,
   }
 }
@@ -169,6 +169,7 @@ function buildDynamicTheoryDefinition(stateRows = []) {
 function normalizeAssignmentResourceItem(item = {}) {
   return {
     id: String(item.id || '').trim(),
+    kind: String(item.kind || '').trim(),
     slotKey: String(item.slotKey || '').trim(),
     rawTitle: String(item.rawTitle || '').trim(),
     questionTitle: String(item.questionTitle || '').trim(),
@@ -232,18 +233,91 @@ function buildDynamicAssignmentStageItems(stageKey, items = [], label = '') {
   })
 }
 
-function buildDynamicResourceStage(stageKey, stateRows = []) {
-  if (stageKey !== 'exam') {
-    return null
+function buildDynamicExamSequenceItems(taskPrefix, resourceItem = {}, options = {}) {
+  const {
+    includeCountdown = false,
+    fixedTaskIds = false,
+    sequenceLabel = '',
+  } = options
+  const baseTitle = resolveAssignmentResourceTitle(resourceItem, sequenceLabel || '测试')
+  const questionTaskId = fixedTaskIds ? 'exam_question' : `${taskPrefix}_question`
+  const uploadTaskId = fixedTaskIds ? 'exam_homework_upload' : `${taskPrefix}_homework_upload`
+  const explainTaskId = fixedTaskIds ? 'exam_explain_video' : `${taskPrefix}_explain_video`
+  const feedbackTaskId = fixedTaskIds ? 'exam_feedback' : `${taskPrefix}_feedback`
+  const reportTaskId = fixedTaskIds ? 'exam_point_report' : `${taskPrefix}_point_report`
+  const items = []
+
+  if (includeCountdown) {
+    items.push({
+      id: 'exam_countdown',
+      title: '倒计时显示器',
+      desc: '设置并开始本次测试倒计时。',
+      actionType: 'timer',
+    })
   }
 
+  items.push({
+    id: questionTaskId,
+    title: sequenceLabel ? `${sequenceLabel}题目` : '题目',
+    desc: `查看${baseTitle}题目 PDF。`,
+    actionText: '查看题目',
+    actionType: 'document',
+    ...(resourceItem.preClassUrl
+      ? { resource: buildResource('pdf', `${baseTitle}题目`, resourceItem.preClassUrl) }
+      : {}),
+  })
+
+  items.push({
+    id: uploadTaskId,
+    title: sequenceLabel ? `${sequenceLabel}上传作业` : '上传作业',
+    desc: `上传${baseTitle}作业，支持 PDF 或图片，可重新上传。`,
+    actionText: '去上传',
+    actionType: 'upload',
+  })
+
+  items.push({
+    id: explainTaskId,
+    title: sequenceLabel ? `${sequenceLabel}视频讲解` : '视频讲解',
+    desc: `查看${baseTitle}视频讲解。`,
+    actionText: '去学习',
+    actionType: 'video',
+    secondaryActionText: '去提问',
+    secondaryActionType: 'askTeacher',
+    ...(resourceItem.videoId
+      ? { resource: buildResource('video', `${baseTitle}视频讲解`, '', resourceItem.videoId) }
+      : {}),
+  })
+
+  items.push({
+    id: feedbackTaskId,
+    title: sequenceLabel ? `${sequenceLabel}批改反馈` : '批改反馈',
+    desc: `查看${baseTitle}批改反馈。`,
+    actionText: '查看反馈',
+    actionType: 'feedback',
+    secondaryActionText: '去提问',
+    secondaryActionType: 'askTeacher',
+  })
+
+  items.push({
+    id: reportTaskId,
+    title: sequenceLabel ? `${sequenceLabel}卡点报告` : '查看卡点报告',
+    desc: `查看${baseTitle}对应的卡点报告。`,
+    actionText: '查看报告',
+    actionType: 'report',
+  })
+
+  return items
+}
+
+function buildDynamicExamStage(stateRows = []) {
   const payload = getTheoryConfigPayload(stateRows)
-  const sourceItems = payload.examItems
-  const items = Array.isArray(sourceItems)
-    ? sourceItems
+  const normalizeItems = (sourceItems = []) => (
+    Array.isArray(sourceItems)
+      ? sourceItems
       .map((item) => normalizeAssignmentResourceItem(item))
       .filter((item) => (
         item.id
+        || item.kind
         || item.displayTitle
         || item.questionTitle
         || item.rawTitle
@@ -251,22 +325,47 @@ function buildDynamicResourceStage(stageKey, stateRows = []) {
         || item.preClassUrl
         || item.analysisUrl
       ))
-    : []
+      : []
+  )
 
-  if (!items.length) {
+  const examItems = normalizeItems(payload.examItems)
+  const remedialItems = normalizeItems(payload.remedialItems)
+
+  if (!examItems.length && !remedialItems.length) {
     return null
   }
 
-  const label = stageKey === 'drill' ? '??' : '??'
+  const primaryExamItem = examItems[0] || remedialItems[0] || null
+  const extraExamItems = examItems.length > 1 ? examItems.slice(1) : []
+  const extraRemedialItems = primaryExamItem && examItems.length === 0 ? remedialItems.slice(1) : remedialItems
+  const items = primaryExamItem
+    ? buildDynamicExamSequenceItems('exam', primaryExamItem, {
+        includeCountdown: true,
+        fixedTaskIds: true,
+      })
+    : [{ id: 'exam_countdown', title: '倒计时显示器', desc: '设置并开始本次测试倒计时。', actionType: 'timer' }]
+
+  extraExamItems.forEach((item, index) => {
+    items.push(...buildDynamicExamSequenceItems(`exam_round_${index + 2}`, item, {
+      sequenceLabel: `加测${index + 1}·`,
+    }))
+  })
+
+  extraRemedialItems.forEach((item, index) => {
+    items.push(...buildDynamicExamSequenceItems(`exam_remedial_${index + 1}`, item, {
+      sequenceLabel: `补考${index + 1}·`,
+    }))
+  })
 
   return {
-    ...STAGE_DEFINITIONS[stageKey],
-    sectionTitle: `${label}??`,
-    stageSubtitle: `????????? ${items.length} ?${label}?????`,
+    ...STAGE_DEFINITIONS.exam,
+    stageSubtitle: remedialItems.length > 0
+      ? `按顺序完成测试任务，并继续完成 ${remedialItems.length} 个补考内容。`
+      : STAGE_DEFINITIONS.exam.stageSubtitle,
     groups: [
       {
-        title: `${label}??`,
-        items: buildDynamicAssignmentStageItems(stageKey, items, label),
+        title: '测试路径',
+        items,
       },
     ],
   }
@@ -288,7 +387,7 @@ function getStageDefinition(stageKey, stateRows = []) {
   }
 
   if (stageKey === 'exam') {
-    const dynamicDefinition = buildDynamicResourceStage(stageKey, stateRows)
+    const dynamicDefinition = buildDynamicExamStage(stateRows)
     if (dynamicDefinition) {
       return dynamicDefinition
     }
@@ -474,7 +573,7 @@ const STAGE_DEFINITIONS = {
     stageKey: 'diagnose',
     stageIndex: '1 / 6',
     stageName: '诊断',
-    stageSubtitle: '按顺序完成诊断群、电话沟通、诊断试卷、解析课、1v1诊断、回顾和报告。',
+        stageSubtitle: '??????????????????????????????????1v1???????????????',
     sectionTitle: '诊断路径',
     groups: [
       {
@@ -483,11 +582,12 @@ const STAGE_DEFINITIONS = {
           { id: 'diagnose_group', title: '诊断群', desc: '点击加入诊断群，接收老师安排和后续通知。', actionText: '去加群', actionType: 'group' },
           { id: 'diagnose_schedule', title: '电话沟通', desc: '自己选择老师可预约时间，确认当前问题和学习目标。', actionText: '预约时间', actionType: 'schedule' },
           { id: 'diagnose_paper', title: '诊断试卷', desc: '先完成诊断试卷，帮助老师判断当前卡点。', actionText: '查看试卷', actionType: 'document' },
+          { id: 'diagnose_paper_upload', title: '上传试卷', desc: '完成试卷后上传答卷 PDF。', actionText: '上传试卷', actionType: 'upload', requireDoneTaskId: 'diagnose_paper', blockedToast: '请先查看诊断试卷' },
           { id: 'diagnose_analysis_video', title: '听解析课', desc: '查看解析课内容，了解本卡点常见失分原因。', actionText: '去学习', actionType: 'video' },
+          { id: 'diagnose_paper_feedback', title: '批改反馈', desc: '查看老师基于试卷给出的批改反馈 PDF。', actionText: '查看反馈', actionType: 'feedback' },
           { id: 'diagnose_live', title: '1v1诊断：去上课', desc: '进入 1v1 诊断直播课链接。', actionText: '去上课', actionType: 'live' },
-          { id: 'diagnose_feedback', title: '课后反馈', desc: '完成课后反馈问卷，帮助老师了解本次诊断课的学习情况。', actionText: '填写反馈', actionType: 'feedback' },
+          { id: 'diagnose_feedback', title: '课后反馈', desc: '查看老师给你的本次诊断反馈。', actionText: '查看反馈', actionType: 'feedback' },
           { id: 'diagnose_replay', title: '去回顾', desc: '查看直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
-          { id: 'diagnose_handout', title: '课后讲义', desc: '查看本次诊断课课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
           { id: 'diagnose_report', title: '报告', desc: '查看诊断报告和后续学习建议。', actionText: '查看报告', actionType: 'report' },
         ],
       },
@@ -497,31 +597,35 @@ const STAGE_DEFINITIONS = {
     stageKey: 'theory',
     stageIndex: '2 / 6',
     stageName: '理论',
-    stageSubtitle: '按“课前讲义—理论课—课后作业—视频讲解”循环学习多轮，完成后再上传思维导图。',
+    stageSubtitle: '按“1v1共识—理论课（多轮）—思维导图—1v1纠偏”顺序完成理论阶段学习。',
     sectionTitle: '理论路径',
     groups: [
       {
-        title: '课前准备',
+        title: '1v1共识',
         items: [
           { id: 'theory_consensus_live', title: '1v1共识：去上课', desc: '进入 1v1 共识直播课链接。', actionText: '去上课', actionType: 'live' },
           { id: 'theory_consensus_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'theory_consensus_replay', title: '去回顾', desc: '查看 1v1 共识直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+          { id: 'theory_consensus_handout', title: '课后笔记', desc: '查看本次共识课的 PDF 笔记。', actionText: '查看笔记', actionType: 'document' },
         ],
       },
       ...THEORY_ROUND_GROUPS,
+      {
+        title: '思维导图',
+        items: [
+          { id: 'theory_mindmap_upload', title: '上传思维导图', desc: '支持上传 PDF 或照片，可反复重新上传。', actionText: '去上传', actionType: 'upload' },
+          { id: 'theory_mindmap_feedback', title: '老师点评', desc: '查看思维导图老师点评。', actionText: '查看点评', actionType: 'feedback' },
+        ],
+      },
       {
         title: '1v1纠偏',
         items: [
           { id: 'theory_correction_live', title: '1v1纠偏：去上课', desc: '进入 1v1 纠偏直播课链接。', actionText: '去上课', actionType: 'live' },
           { id: 'theory_correction_feedback', title: '课后反馈', desc: '完成课后反馈问卷。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'theory_correction_replay', title: '去回顾', desc: '查看 1v1 纠偏直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
-        ],
-      },
-      {
-        title: '思维导图',
-        items: [
-          { id: 'theory_mindmap_upload', title: '上传思维导图', desc: '支持上传 PDF 或照片，可反复重新上传。', actionText: '去上传', actionType: 'upload' },
-          { id: 'theory_mindmap_feedback', title: '老师点评', desc: '查看思维导图老师点评。', actionText: '查看点评', actionType: 'feedback' },
+          { id: 'theory_correction_handout', title: '课后笔记', desc: '查看本次纠偏课的 PDF 笔记。', actionText: '查看笔记', actionType: 'document' },
+          { id: 'theory_correction_upload', title: '作业上传', desc: '上传纠偏课后作业。', actionText: '去上传', actionType: 'upload' },
+          { id: 'theory_correction_review', title: '批改反馈', desc: '查看纠偏课作业批改反馈。', actionText: '查看反馈', actionType: 'feedback' },
         ],
       },
     ],
@@ -750,7 +854,19 @@ function getTaskIndex(stageKey, taskId, stateRows = []) {
 
 function getPreviousTaskIds(stageKey, taskId, stateRows = []) {
   const taskIndex = getTaskIndex(stageKey, taskId, stateRows)
-  if (taskIndex <= 0) return []
+  if (taskIndex <= 0) {
+    const fallbackMap = {
+      'diagnose:diagnose_paper_upload': ['diagnose_paper'],
+      'theory:theory_correction_upload': [
+        'theory_correction_live',
+        'theory_correction_feedback',
+        'theory_correction_replay',
+        'theory_correction_handout',
+      ],
+    }
+
+    return fallbackMap[`${stageKey}:${taskId}`] || []
+  }
 
   return flattenStageTasks(stageKey, stateRows)
     .slice(0, taskIndex)
@@ -761,6 +877,9 @@ function getFeedbackTaskIdForUploadTask(taskId = '') {
   if (!taskId) return ''
 
   const fixedMap = {
+    diagnose_paper_upload: 'diagnose_paper_feedback',
+    theory_mindmap_upload: 'theory_mindmap_feedback',
+    theory_correction_upload: 'theory_correction_review',
     exam_homework_upload: 'exam_feedback',
     drill_upload: 'drill_qa_summary',
   }
@@ -772,6 +891,11 @@ function getFeedbackTaskIdForUploadTask(taskId = '') {
     return `training_round_${trainingMatch[1]}_${trainingMatch[2]}_feedback`
   }
 
+  const examMatch = taskId.match(/^(exam(?:_round|_remedial)_\d+)_homework_upload$/)
+  if (examMatch) {
+    return `${examMatch[1]}_feedback`
+  }
+
   return ''
 }
 
@@ -779,6 +903,9 @@ function getUploadTaskIdForFeedbackTask(taskId = '') {
   if (!taskId) return ''
 
   const fixedMap = {
+    diagnose_paper_feedback: 'diagnose_paper_upload',
+    theory_mindmap_feedback: 'theory_mindmap_upload',
+    theory_correction_review: 'theory_correction_upload',
     exam_feedback: 'exam_homework_upload',
     drill_qa_summary: 'drill_upload',
   }
@@ -790,11 +917,23 @@ function getUploadTaskIdForFeedbackTask(taskId = '') {
     return `training_round_${trainingMatch[1]}_${trainingMatch[2]}_upload`
   }
 
+  const examMatch = taskId.match(/^(exam(?:_round|_remedial)_\d+)_feedback$/)
+  if (examMatch) {
+    return `${examMatch[1]}_homework_upload`
+  }
+
   return ''
 }
 
 function isUploadTask(stageKey, taskId, stateRows = []) {
   const taskDefinition = findTaskDefinition(stageKey, taskId, stateRows)
+  if (!taskDefinition) {
+    const fallbackUploadTaskSet = new Set([
+      'diagnose:diagnose_paper_upload',
+      'theory:theory_correction_upload',
+    ])
+    return fallbackUploadTaskSet.has(`${stageKey}:${taskId}`)
+  }
   return !!(taskDefinition && taskDefinition.actionType === 'upload')
 }
 

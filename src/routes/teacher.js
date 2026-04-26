@@ -2804,6 +2804,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       ? items
         .map((item) => ({
           id: String((item && item.id) || '').trim(),
+          kind: String((item && item.kind) || '').trim(),
           slotKey: String((item && item.slotKey) || '').trim(),
           rawTitle: String((item && item.rawTitle) || '').trim(),
           questionTitle: String((item && item.questionTitle) || '').trim(),
@@ -2829,6 +2830,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
 
   const practiceItems = normalizeAssignmentItems(req.body.practiceItems)
   const examItems = normalizeAssignmentItems(req.body.examItems)
+  const remedialItems = normalizeAssignmentItems(req.body.remedialItems)
   const selectedTeacherId = Number(req.body.teacher?.id) || 0
 
   let conn
@@ -2892,6 +2894,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       examIds,
       practiceItems,
       examItems,
+      remedialItems,
       detail,
       assignedAt: new Date().toISOString(),
     }
@@ -2913,7 +2916,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       `DELETE FROM student_learning_path_tasks
        WHERE student_id = ?
          AND point_name = ?
-         AND stage_key IN ('theory', 'theory_config', 'exam', 'drill', 'report')`,
+         AND stage_key IN ('theory', 'theory_config', 'training', 'exam', 'report')`,
       [studentId, checkpointName],
     )
 

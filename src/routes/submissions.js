@@ -27,6 +27,30 @@ const upload = multer({
   limits: { fileSize: 50 * 1024 * 1024 },
 })
 
+function getMimeTypeByName(fileName = '') {
+  const ext = path.extname(String(fileName || '')).toLowerCase()
+
+  switch (ext) {
+    case '.pdf':
+      return 'application/pdf'
+    case '.png':
+      return 'image/png'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.webp':
+      return 'image/webp'
+    case '.gif':
+      return 'image/gif'
+    default:
+      return 'application/octet-stream'
+  }
+}
+
+function isInlinePreviewMimeType(mimeType = '') {
+  return mimeType === 'application/pdf' || String(mimeType).startsWith('image/')
+}
+
 function cleanMetaPatch(patch = {}) {
   return Object.keys(patch).reduce((result, key) => {
     if (patch[key] !== undefined) {
@@ -279,7 +303,7 @@ router.get('/', auth('teacher'), async (req, res) => {
   }
 })
 
-// GET /api/submissions/file/:id  - 老师获取自己学生的 PDF 文件
+// GET /api/submissions/file/:id  - 老师获取自己学生的提交文件
 router.get('/file/:id', auth('teacher'), async (req, res) => {
   try {
     const [[row]] = await pool.query(
@@ -292,8 +316,12 @@ router.get('/file/:id', auth('teacher'), async (req, res) => {
     if (!row) return res.status(404).json({ error: 'not found' })
     const filePath = path.join(UPLOADS_DIR, row.stored_file)
     if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'file missing' })
-    res.setHeader('Content-Type', 'application/pdf')
-    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(row.file_name)}"`)
+    const mimeType = getMimeTypeByName(row.file_name || row.stored_file || '')
+    res.setHeader('Content-Type', mimeType)
+    res.setHeader(
+      'Content-Disposition',
+      `${isInlinePreviewMimeType(mimeType) ? 'inline' : 'attachment'}; filename="${encodeURIComponent(row.file_name)}"`
+    )
     fs.createReadStream(filePath).pipe(res)
   } catch (err) {
     res.status(500).json({ error: err.message })

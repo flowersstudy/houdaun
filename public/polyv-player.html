@@ -48,6 +48,7 @@
       var errorEl = document.getElementById('error');
       var endedNotified = false;
       var videoObserver = null;
+      var watchedThresholdRatio = 2 / 3;
 
       document.title = title;
 
@@ -56,30 +57,70 @@
         errorEl.style.display = 'flex';
       }
 
-      function notifyPlaybackEnded() {
+      function postPlaybackMessage(payload) {
+        try {
+          if (window.wx && wx.miniProgram) {
+            wx.miniProgram.postMessage({
+              data: payload
+            });
+
+          }
+        } catch (_error) {}
+      }
+
+      function notifyPlaybackThreshold(target) {
+        if (!target) {
+          return;
+        }
+
+        var duration = Number(target.duration || 0);
+        var currentTime = Number(target.currentTime || 0);
+
+        if (!duration || !isFinite(duration) || duration <= 0) {
+          return;
+        }
+
+        var watchedRatio = currentTime / duration;
+        if (watchedRatio < watchedThresholdRatio) {
+          return;
+        }
+
+        if (target.__polyvThresholdReached) {
+          return;
+        }
+
+        target.__polyvThresholdReached = true;
+        postPlaybackMessage({
+          type: 'polyv_threshold_reached',
+          vid: vid,
+          currentTime: currentTime,
+          duration: duration,
+          watchedRatio: watchedRatio,
+          reachedAt: Date.now()
+        });
+      }
+
+      function notifyPlaybackEnded(target) {
         if (!autoBackOnEnded || endedNotified) {
           return;
         }
 
         endedNotified = true;
+        var duration = target ? Number(target.duration || 0) : 0;
+        postPlaybackMessage({
+          type: 'polyv_ended',
+          vid: vid,
+          currentTime: duration || 0,
+          duration: duration || 0,
+          watchedRatio: 1,
+          reachedAt: Date.now()
+        });
 
-        try {
-          if (window.wx && wx.miniProgram) {
-            wx.miniProgram.postMessage({
-              data: {
-                type: 'polyv_ended',
-                vid: vid,
-                endedAt: Date.now()
-              }
-            });
-
-            setTimeout(function () {
-              try {
-                wx.miniProgram.navigateBack({ delta: 1 });
-              } catch (_error) {}
-            }, 120);
-          }
-        } catch (_error) {}
+        setTimeout(function () {
+          try {
+            wx.miniProgram.navigateBack({ delta: 1 });
+          } catch (_error) {}
+        }, 120);
       }
 
       function bindVideoEnded(target) {
@@ -88,7 +129,12 @@
         }
 
         target.__polyvEndedBound = true;
-        target.addEventListener('ended', notifyPlaybackEnded);
+        target.addEventListener('timeupdate', function () {
+          notifyPlaybackThreshold(target);
+        });
+        target.addEventListener('ended', function () {
+          notifyPlaybackEnded(target);
+        });
       }
 
       function bindPlayerEndedEvents(player) {
