@@ -1276,9 +1276,49 @@ function buildDynamicExamStage(stateRows = []) {
   }
 }
 
+function ensureTheoryConsensusHandout(definition) {
+  if (!definition || definition.stageKey !== 'theory' || !Array.isArray(definition.groups)) {
+    return definition
+  }
+
+  return {
+    ...definition,
+    groups: definition.groups.map((group) => {
+      const items = Array.isArray(group.items) ? group.items : []
+      const hasConsensusLive = items.some((item) => item && item.id === 'theory_consensus_live')
+      const hasConsensusHandout = items.some((item) => item && item.id === 'theory_consensus_handout')
+
+      if (!hasConsensusLive || hasConsensusHandout) {
+        return group
+      }
+
+      const nextItems = [...items]
+      const replayIndex = nextItems.findIndex((item) => item && item.id === 'theory_consensus_replay')
+      const handoutItem = {
+        id: 'theory_consensus_handout',
+        title: 'PDF笔记',
+        desc: '查看本次 1v1 共识课程的 PDF 笔记。',
+        actionText: '查看笔记',
+        actionType: 'document',
+      }
+
+      if (replayIndex >= 0) {
+        nextItems.splice(replayIndex + 1, 0, handoutItem)
+      } else {
+        nextItems.push(handoutItem)
+      }
+
+      return {
+        ...group,
+        items: nextItems,
+      }
+    }),
+  }
+}
+
 function getStageDefinition(stageKey, stateRows = []) {
   if (stageKey === 'theory') {
-    return buildDynamicTheoryDefinition(stateRows) || STAGE_DEFINITIONS.theory
+    return ensureTheoryConsensusHandout(buildDynamicTheoryDefinition(stateRows) || STAGE_DEFINITIONS.theory)
   }
   if (stageKey === 'training') {
     return buildDynamicTrainingStage(stateRows) || STAGE_DEFINITIONS.training

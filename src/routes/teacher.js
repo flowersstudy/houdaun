@@ -1,4 +1,4 @@
-﻿const router = require('express').Router()
+const router = require('express').Router()
 const path = require('path')
 const fs = require('fs')
 const multer = require('multer')
@@ -470,21 +470,33 @@ async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpo
   )
 
   const course = await findOrCreateCourse(conn, safeCheckpointName, studentRow && studentRow.subject)
-
-  const initialStatus = 'in_progress'
+  const [[existingEnrollment]] = await conn.query(
+    `SELECT id, sort_order
+     FROM student_courses
+     WHERE student_id = ? AND course_id = ?
+     LIMIT 1`,
+    [studentId, course.id],
+  )
+  const [[sortOrderRow]] = await conn.query(
+    `SELECT COALESCE(MAX(sort_order), -1) AS maxSortOrder
+     FROM student_courses
+     WHERE student_id = ?`,
+    [studentId],
+  )
+  const maxSortOrder = Number(sortOrderRow && sortOrderRow.maxSortOrder)
+  const fallbackSortOrder = Number.isFinite(maxSortOrder) ? maxSortOrder + 1 : 0
+  const normalizedExistingSortOrder = Number(existingEnrollment && existingEnrollment.sort_order)
+  const enrollmentSortOrder = Number.isFinite(normalizedExistingSortOrder)
+    ? normalizedExistingSortOrder
+    : fallbackSortOrder
+  const initialStatus = enrollmentSortOrder === 0 ? 'in_progress' : 'pending'
 
   await conn.query(
     `INSERT INTO student_courses (student_id, course_id, progress, status, sort_order)
      VALUES (?, ?, 0, ?, ?)
      ON DUPLICATE KEY UPDATE
-       status = VALUES(status),
-       sort_order = VALUES(sort_order),
-       progress = CASE
-         WHEN status IN ('completed', 'failed') OR progress >= 100 THEN 0
-         ELSE LEAST(progress, 99)
-       END,
-       created_at = NOW()`,
-    [studentId, course.id, initialStatus, sortOrder],
+       sort_order = COALESCE(sort_order, VALUES(sort_order))`,
+    [studentId, course.id, initialStatus, enrollmentSortOrder],
   )
 
   await ensureStudyPlan(
@@ -495,6 +507,7 @@ async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpo
     String(course.name || safeCheckpointName),
   )
 
+  await rebalanceStudentCourseStatuses(conn, studentId)
   return course
 }
 
@@ -3230,12 +3243,35 @@ router.post('/students/:studentId/courses', async (req, res) => {
   try {
     const [[course]] = await pool.query('SELECT id FROM courses WHERE id = ? AND is_active = 1', [courseId])
     if (!course) return res.status(404).json({ message: '课程不存在' })
-    await pool.query(
-      `INSERT INTO student_courses (student_id, course_id, progress, status)
-       VALUES (?, ?, 0, 'in_progress')
-       ON DUPLICATE KEY UPDATE status = IF(status = 'failed', 'in_progress', status)`,
+    const [[existingEnrollment]] = await pool.query(
+      `SELECT id, sort_order
+       FROM student_courses
+       WHERE student_id = ? AND course_id = ?
+       LIMIT 1`,
       [studentId, courseId]
     )
+    const [[sortOrderRow]] = await pool.query(
+      `SELECT COALESCE(MAX(sort_order), -1) AS maxSortOrder
+       FROM student_courses
+       WHERE student_id = ?`,
+      [studentId]
+    )
+    const maxSortOrder = Number(sortOrderRow && sortOrderRow.maxSortOrder)
+    const fallbackSortOrder = Number.isFinite(maxSortOrder) ? maxSortOrder + 1 : 0
+    const normalizedExistingSortOrder = Number(existingEnrollment && existingEnrollment.sort_order)
+    const enrollmentSortOrder = Number.isFinite(normalizedExistingSortOrder)
+      ? normalizedExistingSortOrder
+      : fallbackSortOrder
+    const initialStatus = enrollmentSortOrder === 0 ? 'in_progress' : 'pending'
+
+    await pool.query(
+      `INSERT INTO student_courses (student_id, course_id, progress, status, sort_order)
+       VALUES (?, ?, 0, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         sort_order = COALESCE(sort_order, VALUES(sort_order))`,
+      [studentId, courseId, initialStatus, enrollmentSortOrder]
+    )
+    await rebalanceStudentCourseStatuses(pool, Number(studentId))
     res.json({ message: '分配成功' })
   } catch (err) {
     res.status(500).json({ message: err.message })

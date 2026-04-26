@@ -502,6 +502,96 @@ async function getReviewPointStatuses(studentId) {
   })
 }
 
+async function loadStudentReviewArchive(studentId) {
+  const [[firstDiagnosis]] = await pool.query(
+    `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
+     FROM diagnosis_reports
+     WHERE student_id = ?
+     ORDER BY COALESCE(diagnosis_date, created_at) ASC, id ASC
+     LIMIT 1`,
+    [studentId]
+  )
+
+  const [[latestDiagnosis]] = await pool.query(
+    `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
+     FROM diagnosis_reports
+     WHERE student_id = ?
+     ORDER BY COALESCE(diagnosis_date, created_at) DESC, id DESC
+     LIMIT 1`,
+    [studentId]
+  )
+
+  let pointRates = []
+  try {
+    const [rows] = await pool.query(
+      `SELECT
+         point_name AS pointName,
+         current_rate AS currentRate,
+         target_rate AS targetRate,
+         sort_order AS sortOrder,
+         source_type AS sourceType,
+         created_at AS updatedAt
+       FROM review_point_scores
+       WHERE student_id = ?
+         AND id IN (
+           SELECT MAX(id)
+           FROM review_point_scores
+           WHERE student_id = ?
+           GROUP BY point_name
+         )
+       ORDER BY sort_order ASC, id ASC`,
+      [studentId, studentId]
+    )
+    pointRates = rows.map((row) => ({
+      ...row,
+      pointName: normalizeCheckpointName(row.pointName),
+    }))
+  } catch (error) {
+    if (!isMissingTableError(error)) {
+      throw error
+    }
+  }
+
+  const entryDiagnosisScore = firstDiagnosis ? firstDiagnosis.diagnosis_score : null
+  const currentDiagnosisScore = latestDiagnosis
+    ? latestDiagnosis.diagnosis_score
+    : null
+  const targetScore = latestDiagnosis
+    ? latestDiagnosis.target_score
+    : firstDiagnosis
+      ? firstDiagnosis.target_score
+      : null
+  const diagnosisScore = currentDiagnosisScore !== null
+    ? currentDiagnosisScore
+    : entryDiagnosisScore
+  const targetExam = latestDiagnosis && latestDiagnosis.targetExam
+    ? latestDiagnosis.targetExam
+    : firstDiagnosis && firstDiagnosis.targetExam
+      ? firstDiagnosis.targetExam
+      : ''
+  const scoreGap = diagnosisScore !== null && targetScore !== null
+    ? Number(targetScore) - Number(diagnosisScore)
+    : null
+
+  return {
+    targetExam,
+    diagnosisScore,
+    entryDiagnosisScore,
+    currentDiagnosisScore,
+    targetScore,
+    scoreGap,
+    pointScores: pointRates,
+    progress: {
+      entryScore: entryDiagnosisScore,
+      currentScore: latestDiagnosis && firstDiagnosis && latestDiagnosis.id !== firstDiagnosis.id
+        ? latestDiagnosis.diagnosis_score
+        : null,
+      targetScore,
+    },
+    pointRates,
+  }
+}
+
 async function buildStudentAccessSummary(studentId) {
   const [[studentCourseRow]] = await pool.query(
     `SELECT
@@ -1613,6 +1703,7 @@ router.get('/profile', async (req, res) => {
   try {
     await backfillStudentCoursesFromLearningPath(studentId)
     await syncAllStudentCourseProgress(studentId)
+    const reviewArchive = await loadStudentReviewArchive(studentId)
 
     const [[profileInfo]] = await pool.query(
       `SELECT s.id, s.name, s.phone, s.status,
@@ -1649,7 +1740,17 @@ router.get('/profile', async (req, res) => {
     res.json({
       inProgress,
       completed,
-      profileInfo: profileInfo || null,
+      profileInfo: profileInfo ? {
+        ...profileInfo,
+        targetExam: reviewArchive.targetExam,
+        diagnosisScore: reviewArchive.diagnosisScore,
+        entryDiagnosisScore: reviewArchive.entryDiagnosisScore,
+        currentDiagnosisScore: reviewArchive.currentDiagnosisScore,
+        targetScore: reviewArchive.targetScore,
+        scoreGap: reviewArchive.scoreGap,
+        pointScores: reviewArchive.pointScores,
+      } : null,
+      reviewArchive,
     })
   } catch (err) {
     res.status(500).json({ message: err.message })
@@ -1775,74 +1876,14 @@ router.get('/review-overview', async (req, res) => {
   try {
     await backfillStudentCoursesFromLearningPath(studentId)
     await syncAllStudentCourseProgress(studentId)
-
-    const [[firstDiagnosis]] = await pool.query(
-      `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
-       FROM diagnosis_reports
-       WHERE student_id = ?
-       ORDER BY COALESCE(diagnosis_date, created_at) ASC, id ASC
-       LIMIT 1`,
-      [studentId]
-    )
-
-    const [[latestDiagnosis]] = await pool.query(
-      `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
-       FROM diagnosis_reports
-       WHERE student_id = ?
-       ORDER BY COALESCE(diagnosis_date, created_at) DESC, id DESC
-       LIMIT 1`,
-      [studentId]
-    )
-
-    let pointRates = []
-    try {
-      const [rows] = await pool.query(
-        `SELECT
-           point_name AS pointName,
-           current_rate AS currentRate,
-           target_rate AS targetRate,
-           sort_order AS sortOrder,
-           source_type AS sourceType,
-           created_at AS updatedAt
-         FROM review_point_scores
-         WHERE student_id = ?
-           AND id IN (
-             SELECT MAX(id)
-             FROM review_point_scores
-             WHERE student_id = ?
-             GROUP BY point_name
-           )
-         ORDER BY sort_order ASC, id ASC`,
-        [studentId, studentId]
-      )
-      pointRates = rows
-    } catch (error) {
-      if (!isMissingTableError(error)) {
-        throw error
-      }
-    }
-
+    const reviewArchive = await loadStudentReviewArchive(studentId)
     const studyTimes = await buildStudyTimesFromSessions(studentId)
     const pointStatuses = await getReviewPointStatuses(studentId)
 
     res.json({
-      targetExam: latestDiagnosis && latestDiagnosis.targetExam
-        ? latestDiagnosis.targetExam
-        : firstDiagnosis && firstDiagnosis.targetExam
-          ? firstDiagnosis.targetExam
-          : '',
-      progress: {
-        entryScore: firstDiagnosis ? firstDiagnosis.diagnosis_score : null,
-        currentScore: latestDiagnosis && firstDiagnosis && latestDiagnosis.id !== firstDiagnosis.id
-          ? latestDiagnosis.diagnosis_score
-          : null,
-        targetScore: latestDiagnosis
-          ? latestDiagnosis.target_score
-          : firstDiagnosis
-            ? firstDiagnosis.target_score
-            : null,
-      },
-      pointRates,
+      targetExam: reviewArchive.targetExam,
+      progress: reviewArchive.progress,
+      pointRates: reviewArchive.pointRates,
       pointStatuses,
       studyTimes,
     })
