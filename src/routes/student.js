@@ -318,15 +318,8 @@ async function saveLearningPathTask({
         [studentId, safePointName, stageKey, taskId]
       )
 
-      let mergedMeta = mergeLearningPathMeta({}, metaPatch)
-      if (existingRow && existingRow.meta_json) {
-        try {
-          const parsedMeta = JSON.parse(existingRow.meta_json)
-          mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
-        } catch {
-          mergedMeta = mergeLearningPathMeta({}, metaPatch)
-        }
-      }
+      const existingMeta = readMeta(existingRow && existingRow.meta_json)
+      const mergedMeta = mergeLearningPathMeta(existingMeta, metaPatch)
 
       const nextDone = status === 'pending' || status === 'current'
         ? 0

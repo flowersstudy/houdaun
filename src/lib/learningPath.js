@@ -375,27 +375,6 @@ function buildDynamicExamStage(stateRows = []) {
 }
 
 function getStageDefinition(stageKey, stateRows = []) {
-  if (stageKey === 'theory') {
-    const dynamicDefinition = buildDynamicTheoryDefinition(stateRows)
-    if (dynamicDefinition) {
-      return dynamicDefinition
-    }
-  }
-
-  if (stageKey === 'training') {
-    const dynamicDefinition = buildDynamicTrainingStage(stateRows)
-    if (dynamicDefinition) {
-      return dynamicDefinition
-    }
-  }
-
-  if (stageKey === 'exam') {
-    const dynamicDefinition = buildDynamicExamStage(stateRows)
-    if (dynamicDefinition) {
-      return dynamicDefinition
-    }
-  }
-
   return STAGE_DEFINITIONS[stageKey] || STAGE_DEFINITIONS.diagnose
 }
 

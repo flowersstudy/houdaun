@@ -7,20 +7,9 @@ async function rebalanceStudentCourseStatuses(executor, studentId) {
     [studentId]
   )
 
-  let activeCourseAssigned = false
-
   for (const row of rows) {
     const currentStatus = String(row.status || '').trim()
-    let nextStatus = currentStatus
-
-    if (currentStatus === 'completed') {
-      nextStatus = 'completed'
-    } else if (!activeCourseAssigned) {
-      nextStatus = 'in_progress'
-      activeCourseAssigned = true
-    } else {
-      nextStatus = 'pending'
-    }
+    const nextStatus = currentStatus === 'completed' ? 'completed' : 'in_progress'
 
     if (nextStatus !== currentStatus) {
       await executor.query(

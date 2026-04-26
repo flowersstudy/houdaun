@@ -15,6 +15,9 @@ const { normalizeCheckpointName } = require('../lib/checkpoint')
 const { UPLOADS_DIR } = require('../lib/uploads')
 const { sendGradeNotification } = require('../lib/wxSubscribe')
 
+const MAX_UPLOAD_MB = 200
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
 const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
   filename:    (_req, file, cb) => {
@@ -24,8 +27,22 @@ const storage = multer.diskStorage({
 })
 const upload = multer({
   storage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 })
+
+function runSingleFileUpload(middleware) {
+  return (req, res, next) => {
+    middleware(req, res, (error) => {
+      if (!error) return next()
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ error: `文件过大，当前最大支持 ${MAX_UPLOAD_MB}MB` })
+      }
+      return res.status(400).json({ error: error.message || '上传失败' })
+    })
+  }
+}
+
+const uploadSingleFile = runSingleFileUpload(upload.single('file'))
 
 function getMimeTypeByName(fileName = '') {
   const ext = path.extname(String(fileName || '')).toLowerCase()
@@ -189,7 +206,7 @@ async function validateLearningPathUpload(studentId, pointName, stageKey, taskId
 }
 
 // POST /api/submissions  - 学生上传
-router.post('/', auth('student'), upload.single('file'), async (req, res) => {
+router.post('/', auth('student'), uploadSingleFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到文件' })
 
   const {
@@ -362,7 +379,7 @@ router.get('/file/:id', auth('teacher'), async (req, res) => {
 })
 
 // POST /api/submissions/:id/review-file  - 老师上传批改后 PDF
-router.post('/:id/review-file', auth('teacher'), upload.single('file'), async (req, res) => {
+router.post('/:id/review-file', auth('teacher'), uploadSingleFile, async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '未收到批改 PDF' })
 
   const ext = path.extname(req.file.originalname || '').toLowerCase()

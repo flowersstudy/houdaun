@@ -8,6 +8,7 @@ const auth = require('../middleware/auth')
 const {
   buildLearningPathPayload,
   findTaskDefinition,
+  readMeta,
   summarizeLearningPathProgress,
 } = require('../lib/learningPath')
 const {
@@ -24,6 +25,9 @@ const {
   rebalanceStudentCourseStatuses,
 } = require('../lib/studentCourseStatus')
 
+const MAX_UPLOAD_MB = 200
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+
 router.use(auth('teacher'))
 
 const materialStorage = multer.diskStorage({
@@ -35,8 +39,22 @@ const materialStorage = multer.diskStorage({
 })
 const uploadMaterial = multer({
   storage: materialStorage,
-  limits: { fileSize: 50 * 1024 * 1024 },
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 })
+
+function runSingleMaterialUpload(middleware) {
+  return (req, res, next) => {
+    middleware(req, res, (error) => {
+      if (!error) return next()
+      if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({ message: `文件过大，当前最大支持 ${MAX_UPLOAD_MB}MB` })
+      }
+      return res.status(400).json({ message: error.message || '上传失败' })
+    })
+  }
+}
+
+const uploadSingleMaterial = runSingleMaterialUpload(uploadMaterial.single('file'))
 
 const TASK_COLORS = ['#e8845a', '#6b9e78', '#7b8fc4', '#c4847b', '#9b84c4', '#84b8c4', '#c4b484', '#84c4a4']
 
@@ -309,19 +327,7 @@ async function syncAssignedTheoryLessonsToStudyPlan(conn, studentId, courseId, c
   return true
 }
 
-async function ensureStudyPlan(conn, studentId, courseId, studentName, courseName, theoryLessons = []) {
-  const syncedAssignedResources = await syncAssignedTheoryLessonsToStudyPlan(
-    conn,
-    studentId,
-    courseId,
-    courseName,
-    theoryLessons,
-  )
-
-  if (syncedAssignedResources) {
-    return
-  }
-
+async function ensureStudyPlan(conn, studentId, courseId, studentName, courseName) {
   const [[existingStudyDay]] = await conn.query(
     `SELECT id
      FROM study_days
@@ -393,7 +399,7 @@ async function findOrCreateCourse(conn, courseName, subject = '') {
   }
 }
 
-async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpointName, theoryLessons = [], sortOrder = 0) {
+async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpointName, sortOrder = 0) {
   const safeCheckpointName = normalizeCheckpointName(checkpointName)
   if (!safeCheckpointName) return null
 
@@ -410,7 +416,7 @@ async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpo
 
   const course = await findOrCreateCourse(conn, safeCheckpointName, studentRow && studentRow.subject)
 
-  const initialStatus = sortOrder === 0 ? 'in_progress' : 'pending'
+  const initialStatus = 'in_progress'
 
   await conn.query(
     `INSERT INTO student_courses (student_id, course_id, progress, status, sort_order)
@@ -432,7 +438,6 @@ async function ensureStudentCourseEnrollment(conn, teacherId, studentId, checkpo
     course.id,
     String((studentRow && studentRow.name) || '学生'),
     String(course.name || safeCheckpointName),
-    theoryLessons,
   )
 
   return course
@@ -748,8 +753,7 @@ async function getPendingLinkItems(teacherId) {
       studentMap.get(sid).pointName = normalizeCheckpointName(row.point_name)
     }
     if (row.task_id) {
-      let meta = {}
-      try { meta = JSON.parse(row.meta_json || '{}') } catch { meta = {} }
+      const meta = readMeta(row.meta_json)
       studentMap.get(sid).tasks[row.task_id] = {
         liveUrl: meta.liveUrl || '',
         replayVideoId: meta.replayVideoId || '',
@@ -1933,15 +1937,8 @@ async function saveLearningPathTask({
         [studentId, safePointName, stageKey, taskId]
       )
 
-      let mergedMeta = mergeLearningPathMeta({}, metaPatch)
-      if (existingRow && existingRow.meta_json) {
-        try {
-          const parsedMeta = JSON.parse(existingRow.meta_json)
-          mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
-        } catch {
-          mergedMeta = mergeLearningPathMeta({}, metaPatch)
-        }
-      }
+      const existingMeta = readMeta(existingRow && existingRow.meta_json)
+      const mergedMeta = mergeLearningPathMeta(existingMeta, metaPatch)
 
       const nextDone = status === 'pending' || status === 'current'
         ? 0
@@ -2690,10 +2687,7 @@ router.post('/live-link', async (req, res) => {
        WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ? LIMIT 1`,
       [studentId, safePoint, def.stageKey, taskId]
     )
-    let meta = {}
-    if (existing) {
-      try { meta = JSON.parse(existing.meta_json || '{}') } catch { meta = {} }
-    }
+    const meta = readMeta(existing && existing.meta_json)
     meta[metaKey] = link
 
     await pool.query(
@@ -2741,7 +2735,7 @@ router.post('/materials/replay', async (req, res) => {
 
 // 濠电姷鏁告慨鐑藉极閸涘﹥鍙忛柣鎴ｆ閺嬩線鏌熼梻瀵割槮缁炬儳顭烽弻锝夊箛椤掍焦鍎撻梺鎼炲妼閸婂潡寮诲☉銏╂晝闁挎繂妫涢ˇ銉х磽娴ｅ搫小闁告濞婂濠氭偄閸忓皷鎷婚柣搴ｆ暩椤牊淇婃禒瀣拺闁告繂瀚崳铏圭磼鐠囪尙澧︾€殿喖顭锋俊鎼佸Ψ閵忊剝鏉搁梻浣虹《閸撴繈鏁嬪銈忚吂閺呮盯鈥旈崘顔嘉ч幖绮光偓鑼嚬婵犵數鍋犵亸娆撳窗閺嵮屽殨閻犲洦绁村Σ鍫ユ煏韫囨洖啸妞ゆ梹甯″娲嚃閳圭偓瀚涢梺鍛婃尰閻燂附绌辨繝鍐浄閻庯綆鍋嗛崢浠嬫煙閸忚偐鏆橀柛銊ヮ煼閵嗗倿鎳犻钘変壕闁稿繐顦禍楣冩⒑瑜版帗锛熺紒鈧笟鈧幏鎴︽偄閸忚偐鍘介梺鍝勫暙閸婄敻骞忛敓鐘崇厸濞达絽鎽滄晥闂佸搫鏈惄顖炲春閸曨垰绀冮柣鎰靛墰閺嗐儲淇婇悙顏勨偓鏇犳崲閸℃稑鐤鹃柣妯款嚙閽冪喓鈧箍鍎遍悧婊冾瀶閵娾晜鈷戦柛娑橈攻鐏忎即鏌ｉ埡濠傜仩妞ゆ洩缍侀、鏇㈡晲閸モ晝妲囨繝娈垮枟閿曗晠宕滃☉銏″仼婵炲樊浜濋悡鐔兼煟閺傛寧鎲搁柟鍐插暣閹顫濋悡搴＄闂佸憡甯掗敃顏堢嵁濮椻偓椤㈡瑩鎮剧仦钘夌睄濠电姷顣藉Σ鍛村垂椤栨粍濯伴柨鏇楀亾閸楅亶鏌涘┑鍡楊伌闁绘柨妫濋幃褰掑传閸曨剚鍎撳銈呮禋閸嬪棛妲?
 // 通用 PDF 上传，返回可访问 URL
-router.post('/upload/pdf', uploadMaterial.single('file'), async (req, res) => {
+router.post('/upload/pdf', uploadSingleMaterial, async (req, res) => {
   if (!req.file) return res.status(400).json({ message: '请上传文件' })
   const ext = path.extname(req.file.originalname).toLowerCase()
   if (ext !== '.pdf') {
@@ -2752,7 +2746,7 @@ router.post('/upload/pdf', uploadMaterial.single('file'), async (req, res) => {
   res.json({ url, storedFile: req.file.filename })
 })
 
-router.post('/materials/handout', uploadMaterial.single('file'), async (req, res) => {
+router.post('/materials/handout', uploadSingleMaterial, async (req, res) => {
   const { taskRowId } = req.body
   if (!taskRowId) {
     if (req.file) fs.unlink(path.join(UPLOADS_DIR, req.file.filename), () => {})
@@ -2814,74 +2808,6 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
   const provinceLabel = String(req.body.provinceLabel || '').trim()
   const detail = String(req.body.detail || '').trim()
 
-  const knowledgeItems = Array.isArray(req.body.knowledgeItems)
-    ? req.body.knowledgeItems
-      .map((item) => ({
-        id: String((item && item.id) || '').trim(),
-        title: String((item && item.title) || '').trim(),
-        type: String((item && item.type) || '').trim(),
-        desc: String((item && item.desc) || '').trim(),
-      }))
-      .filter((item) => item.id || item.title)
-    : []
-
-  const theoryLessons = Array.isArray(req.body.theoryLessons)
-    ? req.body.theoryLessons
-      .map((item) => ({
-        id: String((item && item.id) || '').trim(),
-        title: String((item && item.title) || '').trim(),
-        scope: String((item && item.scope) || '').trim(),
-        videoId: String((item && item.videoId) || '').trim(),
-        preClassUrl: String((item && item.preClassUrl) || '').trim(),
-        analysisUrl: String((item && item.analysisUrl) || '').trim(),
-        noteText: String((item && item.noteText) || '').trim(),
-        knowledgeId: String((item && item.knowledgeId) || '').trim(),
-        knowledgeTitle: String((item && item.knowledgeTitle) || '').trim(),
-        knowledgeType: String((item && item.knowledgeType) || '').trim(),
-      }))
-      .filter((item) => item.id || item.title || item.videoId || item.preClassUrl || item.analysisUrl)
-    : []
-
-  const practiceIds = Array.isArray(req.body.practiceIds)
-    ? req.body.practiceIds.map((item) => String(item || '').trim()).filter(Boolean)
-    : []
-
-  const examIds = Array.isArray(req.body.examIds)
-    ? req.body.examIds.map((item) => String(item || '').trim()).filter(Boolean)
-    : []
-
-  const normalizeAssignmentItems = (items = []) => (
-    Array.isArray(items)
-      ? items
-        .map((item) => ({
-          id: String((item && item.id) || '').trim(),
-          kind: String((item && item.kind) || '').trim(),
-          slotKey: String((item && item.slotKey) || '').trim(),
-          rawTitle: String((item && item.rawTitle) || '').trim(),
-          questionTitle: String((item && item.questionTitle) || '').trim(),
-          displayTitle: String((item && item.displayTitle) || '').trim(),
-          videoId: String((item && item.videoId) || '').trim(),
-          preClassUrl: String((item && item.preClassUrl) || '').trim(),
-          analysisUrl: String((item && item.analysisUrl) || '').trim(),
-          provinceKeys: Array.isArray(item && item.provinceKeys)
-            ? item.provinceKeys.map((key) => String(key || '').trim()).filter(Boolean)
-            : [],
-        }))
-        .filter((item) => (
-          item.id
-          || item.displayTitle
-          || item.questionTitle
-          || item.rawTitle
-          || item.videoId
-          || item.preClassUrl
-          || item.analysisUrl
-        ))
-      : []
-  )
-
-  const practiceItems = normalizeAssignmentItems(req.body.practiceItems)
-  const examItems = normalizeAssignmentItems(req.body.examItems)
-  const remedialItems = normalizeAssignmentItems(req.body.remedialItems)
   const selectedTeacherId = Number(req.body.teacher?.id) || 0
 
   let conn
@@ -2932,27 +2858,8 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       title: String(selectedTeacher.title || '').trim(),
     }
 
-    const assignmentPayload = {
-      checkpointName,
-      sortOrder,
-      version,
-      versionName,
-      province,
-      provinceLabel,
-      teacher: normalizedTeacherInfo,
-      knowledgeItems,
-      theoryLessons,
-      practiceIds,
-      examIds,
-      practiceItems,
-      examItems,
-      remedialItems,
-      detail,
-      assignedAt: new Date().toISOString(),
-    }
-
     await ensureTeacherStudentRelation(conn, selectedTeacher.id, studentId)
-    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, theoryLessons, sortOrder)
+    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, sortOrder)
     await ensureChatRoom(conn, selectedTeacher.id, studentId)
     await conn.query(
       `INSERT INTO student_team_members (student_id, teacher_id, role, status)
@@ -2963,26 +2870,6 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
          assigned_at = NOW()`,
       [studentId, selectedTeacher.id, teacherRole],
     )
-
-    await conn.query(
-      `DELETE FROM student_learning_path_tasks
-       WHERE student_id = ?
-         AND point_name = ?
-         AND stage_key IN ('theory', 'theory_config', 'training', 'exam', 'report', 'drill')`,
-      [studentId, checkpointName],
-    )
-
-    await saveLearningPathTask({
-      studentId,
-      pointName: checkpointName,
-      stageKey: 'theory_config',
-      taskId: 'assignment_config',
-      status: 'done',
-      metaPatch: assignmentPayload,
-      actorRole: 'teacher',
-      actorId: req.user.id,
-      executor: conn,
-    })
 
     await conn.query(
       `UPDATE practice_assignment_tasks
@@ -3128,6 +3015,18 @@ router.get('/list', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, name, title FROM teachers ORDER BY id ASC')
     res.json({ list: rows.map((r) => ({ id: String(r.id), name: r.name, title: r.title ?? '' })) })
+  } catch (err) {
+    res.status(500).json({ message: err.message })
+  }
+})
+
+router.get('/checkpoints', (_req, res) => {
+  try {
+    const list = ALL_CHECKPOINTS
+      .map((name) => normalizeCheckpointName(name))
+      .filter(Boolean)
+      .map((name) => ({ key: name, label: name }))
+    res.json({ list })
   } catch (err) {
     res.status(500).json({ message: err.message })
   }
