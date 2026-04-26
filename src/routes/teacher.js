@@ -57,6 +57,8 @@ function runSingleMaterialUpload(middleware) {
 const uploadSingleMaterial = runSingleMaterialUpload(uploadMaterial.single('file'))
 
 const TASK_COLORS = ['#e8845a', '#6b9e78', '#7b8fc4', '#c4847b', '#9b84c4', '#84b8c4', '#c4b484', '#84c4a4']
+const THEORY_CONFIG_STAGE_KEY = 'theory_config'
+const THEORY_CONFIG_TASK_ID = 'assignment_config'
 
 function buildDefaultStudyPlan(studentName, courseName, studentId) {
   return [
@@ -114,6 +116,59 @@ function normalizeAssignedTheoryLesson(lesson = {}) {
     preClassUrl: String(lesson.preClassUrl || '').trim(),
     analysisUrl: String(lesson.analysisUrl || '').trim(),
   }
+}
+
+function normalizeAssignedResourceItem(item = {}) {
+  return {
+    id: String(item.id || '').trim(),
+    kind: String(item.kind || '').trim(),
+    slotKey: String(item.slotKey || '').trim(),
+    rawTitle: String(item.rawTitle || '').trim(),
+    questionTitle: String(item.questionTitle || '').trim(),
+    displayTitle: String(item.displayTitle || item.title || '').trim(),
+    videoId: String(item.videoId || '').trim(),
+    preClassUrl: String(item.preClassUrl || '').trim(),
+    analysisUrl: String(item.analysisUrl || '').trim(),
+    provinceKeys: Array.isArray(item.provinceKeys)
+      ? item.provinceKeys.map((key) => String(key || '').trim()).filter(Boolean)
+      : [],
+  }
+}
+
+function normalizeAssignedTheoryLessonsPayload(lessons = []) {
+  return Array.isArray(lessons)
+    ? lessons
+      .map((lesson) => normalizeAssignedTheoryLesson(lesson))
+      .filter((lesson) => lesson.title || lesson.videoId || lesson.preClassUrl || lesson.analysisUrl)
+    : []
+}
+
+function normalizeAssignedResourceItemsPayload(items = []) {
+  return Array.isArray(items)
+    ? items
+      .map((item) => normalizeAssignedResourceItem(item))
+      .filter((item) => (
+        item.displayTitle
+        || item.questionTitle
+        || item.rawTitle
+        || item.videoId
+        || item.preClassUrl
+        || item.analysisUrl
+      ))
+    : []
+}
+
+async function clearAssignedLearningPathStageState(conn, studentId, pointName) {
+  const safePointName = normalizeCheckpointName(pointName)
+  if (!studentId || !safePointName) return
+
+  await conn.query(
+    `DELETE FROM student_learning_path_tasks
+     WHERE student_id = ?
+       AND point_name = ?
+       AND stage_key IN ('theory', 'training', 'exam', 'report')`,
+    [studentId, safePointName],
+  )
 }
 
 function buildAssignedTheoryResources(lesson, titlePrefix) {
@@ -767,6 +822,17 @@ const LIVE_TASK_DEFS = [
   { courseType: 'correction', liveTaskId: 'theory_correction_live', replayTaskId: 'theory_correction_replay', stageKey: 'theory',   label: '1v1纠偏' },
 ]
 
+function getAllowedLiveCourseTypesByTeamRole(teamRole) {
+  switch (String(teamRole || '').trim()) {
+    case 'diagnosis':
+      return new Set(['diagnose'])
+    case 'coach':
+      return new Set(['consensus', 'correction'])
+    default:
+      return new Set()
+  }
+}
+
 async function getPendingLinkItems(teacherId) {
   const taskIds = LIVE_TASK_DEFS.flatMap((d) => [d.liveTaskId, d.replayTaskId])
   const [rows] = await pool.query(
@@ -774,12 +840,17 @@ async function getPendingLinkItems(teacherId) {
        ts.student_id,
        s.name AS student_name,
        cr.id AS contact_id,
+       stm.role AS team_role,
        c.name AS point_name,
        slpt.task_id,
        slpt.meta_json
      FROM teacher_students ts
      JOIN students s ON s.id = ts.student_id
      LEFT JOIN chat_rooms cr ON cr.teacher_id = ts.teacher_id AND cr.student_id = ts.student_id
+     LEFT JOIN student_team_members stm
+       ON stm.student_id = ts.student_id
+      AND stm.teacher_id = ts.teacher_id
+      AND stm.status = 'assigned'
      LEFT JOIN student_courses sc ON sc.student_id = ts.student_id
      LEFT JOIN courses c ON c.id = sc.course_id
      LEFT JOIN student_learning_path_tasks slpt
@@ -799,9 +870,13 @@ async function getPendingLinkItems(teacherId) {
         studentId: sid,
         studentName: row.student_name,
         contactId: row.contact_id ? String(row.contact_id) : undefined,
+        teamRole: row.team_role ? String(row.team_role) : '',
         pointName: row.point_name ? normalizeCheckpointName(row.point_name) : '',
         tasks: {},
       })
+    }
+    if (!studentMap.get(sid).teamRole && row.team_role) {
+      studentMap.get(sid).teamRole = String(row.team_role)
     }
     // 如果还没有 pointName，尝试从当前行补充
     if (!studentMap.get(sid).pointName && row.point_name) {
@@ -820,8 +895,12 @@ async function getPendingLinkItems(teacherId) {
   for (const student of studentMap.values()) {
     // 没有分配课程的学生跳过
     if (!student.pointName) continue
+    const allowedCourseTypes = getAllowedLiveCourseTypesByTeamRole(student.teamRole)
+    if (allowedCourseTypes.size === 0) continue
 
     for (const def of LIVE_TASK_DEFS) {
+      if (!allowedCourseTypes.has(def.courseType)) continue
+
       const liveTask   = student.tasks[def.liveTaskId]
       const replayTask = student.tasks[def.replayTaskId]
 
@@ -2730,12 +2809,19 @@ router.post('/live-link', async (req, res) => {
   const safePoint = normalizeCheckpointName(pointName)
 
   try {
-    // 验证该学生属于该老师
-    const [[ts]] = await pool.query(
-      'SELECT 1 FROM teacher_students WHERE teacher_id = ? AND student_id = ? LIMIT 1',
+    const [[teamMember]] = await pool.query(
+      `SELECT role
+       FROM student_team_members
+       WHERE teacher_id = ? AND student_id = ? AND status = 'assigned'
+       LIMIT 1`,
       [req.user.id, studentId]
     )
-    if (!ts) return res.status(403).json({ message: '无权操作' })
+    if (!teamMember) return res.status(403).json({ message: '无权操作' })
+
+    const allowedCourseTypes = getAllowedLiveCourseTypesByTeamRole(teamMember.role)
+    if (!allowedCourseTypes.has(courseType)) {
+      return res.status(403).json({ message: '无权操作当前课型链接' })
+    }
 
     // 读取现有 meta_json
     const [[existing]] = await pool.query(
@@ -2863,6 +2949,18 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
   const province = String(req.body.province || '').trim()
   const provinceLabel = String(req.body.provinceLabel || '').trim()
   const detail = String(req.body.detail || '').trim()
+  const theoryLessons = normalizeAssignedTheoryLessonsPayload(req.body.theoryLessons)
+  const practiceItems = normalizeAssignedResourceItemsPayload(req.body.practiceItems)
+  const examItems = normalizeAssignedResourceItemsPayload(req.body.examItems)
+  const remedialItems = normalizeAssignedResourceItemsPayload(req.body.remedialItems)
+
+  if (practiceItems.length !== 3) {
+    return res.status(400).json({ message: '实训题必须分配 3 道' })
+  }
+
+  if (examItems.length !== 1) {
+    return res.status(400).json({ message: '测试题必须分配 1 道' })
+  }
 
   const selectedTeacherId = Number(req.body.teacher?.id) || 0
 
@@ -2901,31 +2999,24 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
         )
       : [[]]
 
-    if (!selectedTeacher) {
+    if (selectedTeacherId && !selectedTeacher) {
       return res.status(400).json({ message: '????' })
     }
 
     const studentId = Number(taskRow.student_id)
-    const teacherRole = inferTeamRoleFromTitle(selectedTeacher.title)
-    const normalizedTeacherInfo = {
-      id: String(selectedTeacher.id),
-      name: String(selectedTeacher.name || '').trim(),
-      role: mapTeamRoleLabel(teacherRole),
-      title: String(selectedTeacher.title || '').trim(),
-    }
-
-    await ensureTeacherStudentRelation(conn, selectedTeacher.id, studentId)
-    await ensureStudentCourseEnrollment(conn, selectedTeacher.id, studentId, checkpointName, sortOrder)
-    await ensureChatRoom(conn, selectedTeacher.id, studentId)
-    await conn.query(
-      `INSERT INTO student_team_members (student_id, teacher_id, role, status)
-       VALUES (?, ?, ?, 'assigned')
-       ON DUPLICATE KEY UPDATE
-         teacher_id = VALUES(teacher_id),
-         status = 'assigned',
-         assigned_at = NOW()`,
-      [studentId, selectedTeacher.id, teacherRole],
+    const course = await ensureStudentCourseEnrollment(
+      conn,
+      selectedTeacher ? selectedTeacher.id : req.user.id,
+      studentId,
+      checkpointName,
+      sortOrder,
     )
+
+    if (selectedTeacher) {
+      await upsertTeamMemberAssignment(conn, studentId, selectedTeacher.id, 'coach')
+    } else {
+      await clearTeamMemberAssignment(conn, studentId, 'coach')
+    }
 
     await conn.query(
       `UPDATE practice_assignment_tasks
@@ -2933,6 +3024,49 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
        WHERE student_id = ?`,
       [checkpointName, detail, studentId],
     )
+
+    await clearAssignedLearningPathStageState(conn, studentId, checkpointName)
+    await saveLearningPathTask({
+      studentId,
+      pointName: checkpointName,
+      stageKey: THEORY_CONFIG_STAGE_KEY,
+      taskId: THEORY_CONFIG_TASK_ID,
+      status: 'pending',
+      metaPatch: {
+        version,
+        versionName,
+        province,
+        provinceLabel,
+        sortOrder,
+        theoryLessons,
+        practiceItems,
+        examItems,
+        remedialItems,
+        assignedTeacher: selectedTeacher
+          ? {
+              id: String(selectedTeacher.id),
+              name: String(selectedTeacher.name || '').trim(),
+              title: String(selectedTeacher.title || '').trim(),
+            }
+          : null,
+        assignedByTeacherId: Number(req.user.id) || 0,
+        assignedByTeacherName: String(req.user.name || '').trim(),
+        assignedAt: new Date().toISOString(),
+      },
+      actorRole: 'teacher',
+      actorId: req.user.id,
+      executor: conn,
+    })
+
+    if (course && theoryLessons.length > 0) {
+      await syncAssignedTheoryLessonsToStudyPlan(
+        conn,
+        studentId,
+        course.id,
+        String(course.name || checkpointName),
+        theoryLessons,
+      )
+    }
 
     await conn.commit()
     res.json({ ok: true, message: '????' })
@@ -2966,6 +3100,67 @@ router.post('/practice-assignment-tasks/:taskId/complete', async (req, res) => {
 })
 
 // 闂傚倸鍊搁崐鎼佸磹閹间礁纾归柟闂寸绾剧懓顪冪€ｎ亝鎹ｉ柣顓炴閵嗘帒顫濋敐鍛婵°倗濮烽崑娑⑺囬悽绋挎瀬鐎广儱顦粈瀣亜閹哄秶鍔嶆い鏂挎喘濮婄粯鎷呴搹鐟扮闂佸憡姊瑰ú鐔笺€佸棰濇晣闁绘ê鍚€缁楀淇婇妶蹇曞埌闁哥噥鍨堕幃锟犲礃椤忓懎鏋戝┑鐘诧工閻楀棛绮堥崼鐔稿弿婵☆垰娼￠崫铏光偓瑙勬礀瀵墎鎹㈠☉銏犵婵炲棗绻掓禒濂告倵閻熺増鍟炵紒璇插暣婵＄敻宕熼姘鳖啋闂佸憡顨堥崑鐔哥婵傚憡鍊垫繛鍫濈仢閺嬫瑩鏌涘Δ浣糕枙妤犵偛鍟灃闁逞屽墴閸┿垽骞樼拠鎻掔€銈嗘⒒閺咁偉銇愰鐐粹拻濞撴埃鍋撴繛鑹板吹缁辩偤宕堕埡浣虹瓘闂佺粯鍔﹂崜娑㈠煘瀹ュ應鏀介柣妯哄级婢跺嫰鏌涙繝鍌ょ吋闁哄矉绠戣灒闁绘艾顕粈鍡涙⒑闂堟单鍫ュ疾濠婂牊鍋傞煫鍥ㄦ惄閻斿棝鎮规ウ鎸庮仩濠⒀勬礋閺屾盯寮埀顒傚垝鎼达絾顫曢柟鐐墯閸氬鏌涘鈧悞锔剧懅闂傚倷绀侀悿鍥綖婢舵劕鍨傞柛褎顨呯粻鏍ㄧ箾閸℃ɑ灏伴柛銈嗗灦閵囧嫰骞掑鍥у闂佸摜濮甸悧婊呮閹捐纾兼繛鍡樺灱缁愭姊洪崫銉バｉ柣妤冨█楠炲棗鐣濋崟顐わ紲闂佺粯鍔︽禍鏍磻閹惧鐟归柍褜鍓欓锝嗙鐎ｅ灚鏅ｉ梺缁樺姈椤旀牕危鐟欏嫪绻嗛柣鎰典簻閳ь剚鐗犲畷婵單旈崨顓犵崶闂佽澹嗘晶妤呭磹?
+router.put('/students/:studentId/team-members/:role', async (req, res) => {
+  const studentId = Number(req.params.studentId)
+  const role = normalizeManagedTeamRole(req.params.role)
+  const teacherId = Number(req.body.teacherId) || 0
+
+  if (!studentId) return res.status(400).json({ message: '学生不存在' })
+  if (!role) return res.status(400).json({ message: '老师角色不合法' })
+
+  let conn
+  try {
+    conn = await pool.getConnection()
+    await conn.beginTransaction()
+
+    const [[studentRow]] = await conn.query(
+      'SELECT id FROM students WHERE id = ? LIMIT 1',
+      [studentId],
+    )
+    if (!studentRow) {
+      await conn.rollback()
+      return res.status(404).json({ message: '学生不存在' })
+    }
+
+    if (!teacherId) {
+      await clearTeamMemberAssignment(conn, studentId, role)
+      await conn.commit()
+      return res.json({ ok: true })
+    }
+
+    const [[teacherRow]] = await conn.query(
+      `SELECT id, name, COALESCE(title, '') AS title
+       FROM teachers
+       WHERE id = ?
+       LIMIT 1`,
+      [teacherId],
+    )
+    if (!teacherRow) {
+      await conn.rollback()
+      return res.status(404).json({ message: '老师不存在' })
+    }
+
+    await upsertTeamMemberAssignment(conn, studentId, teacherId, role)
+    await conn.commit()
+
+    res.json({
+      ok: true,
+      teacher: {
+        id: String(teacherRow.id),
+        name: String(teacherRow.name || ''),
+        title: String(teacherRow.title || ''),
+        role,
+        roleLabel: mapTeamRoleLabel(role),
+      },
+    })
+  } catch (err) {
+    if (conn) await conn.rollback()
+    res.status(500).json({ message: err.message })
+  } finally {
+    if (conn) conn.release()
+  }
+})
+
 router.delete('/calendar/:eventId', async (req, res) => {
   try {
     const [result] = await pool.query(
@@ -3070,7 +3265,18 @@ router.post('/students/:studentId/special-course', async (req, res) => {
 router.get('/list', async (req, res) => {
   try {
     const [rows] = await pool.query('SELECT id, name, title FROM teachers ORDER BY id ASC')
-    res.json({ list: rows.map((r) => ({ id: String(r.id), name: r.name, title: r.title ?? '' })) })
+    res.json({
+      list: rows.map((r) => {
+        const role = inferTeamRoleFromTitle(r.title)
+        return {
+          id: String(r.id),
+          name: r.name,
+          title: r.title ?? '',
+          role,
+          roleLabel: mapTeamRoleLabel(role),
+        }
+      }),
+    })
   } catch (err) {
     res.status(500).json({ message: err.message })
   }
