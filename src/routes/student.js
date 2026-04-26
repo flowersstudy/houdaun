@@ -24,6 +24,9 @@ const {
 } = require('../lib/studentFeedback')
 const { normalizeCheckpointName } = require('../lib/checkpoint')
 const { UPLOADS_DIR } = require('../lib/uploads')
+const {
+  buildReviewPointStatuses,
+} = require('../lib/reviewPointStatus')
 
 router.use(auth('student'))
 
@@ -31,24 +34,6 @@ const POLYV_PLAY_AUTH_URL = String(process.env.POLYV_PLAY_AUTH_URL || 'https://a
 const POLYV_PLAY_AUTH_METHOD = String(process.env.POLYV_PLAY_AUTH_METHOD || 'GET').trim().toUpperCase()
 const POLYV_USER_ID = String(process.env.POLYV_USER_ID || '').trim()
 const POLYV_SECRET_KEY = String(process.env.POLYV_SECRET_KEY || '').trim()
-
-const REVIEW_POINT_LIST = [
-  { id: 1, pointName: '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6' },
-  { id: 2, pointName: '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be' },
-  { id: 3, pointName: '\u5206\u6790\u7ed3\u6784\u4e0d\u6e05' },
-  { id: 4, pointName: '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05' },
-  { id: 5, pointName: '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be' },
-  { id: 6, pointName: '\u4f5c\u6587\u7acb\u610f\u4e0d\u51c6' },
-  { id: 7, pointName: '\u4f5c\u6587\u8bba\u8bc1\u4e0d\u6e05' },
-  { id: 8, pointName: '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545' },
-]
-
-const REVIEW_POINT_STATUS_PRIORITY = {
-  learning: 0,
-  completed: 1,
-  assigned: 2,
-  locked: 3,
-}
 
 function createMd5(value = '') {
   return crypto.createHash('md5').update(String(value)).digest('hex')
@@ -165,7 +150,16 @@ function getTheoryRatingContext(learningPathRows = [], taskId = '') {
     && row.task_id === 'assignment_config'
   ))
   const configMeta = readMeta(configRow && configRow.meta_json)
-  const theoryLessons = Array.isArray(configMeta.theoryLessons) ? configMeta.theoryLessons : []
+  const theoryLessons = Array.isArray(configMeta.theoryLessons)
+    ? configMeta.theoryLessons.filter((lesson) => (
+      lesson
+      && (
+        String(lesson.videoId || '').trim()
+        || String(lesson.preClassUrl || '').trim()
+        || String(lesson.analysisUrl || '').trim()
+      )
+    ))
+    : []
   const lesson = theoryLessons[roundNumber - 1]
 
   if (!lesson || typeof lesson !== 'object') {
@@ -438,7 +432,12 @@ async function validateStudentLearningPathPatch({
 
   // diagnose_feedback 是学生自填问卷，不需要老师批改，跳过批改检查
   const isSelfFeedback = taskId === 'diagnose_feedback'
-  if (!isSelfFeedback && isFeedbackTask(stageKey, taskId, learningPathRows)) {
+  const isSelfReportedFeedback = new Set([
+    'diagnose_feedback',
+    'theory_consensus_feedback',
+    'theory_correction_feedback',
+  ]).has(taskId)
+  if (!isSelfReportedFeedback && isFeedbackTask(stageKey, taskId, learningPathRows)) {
     const hasResult = await hasGradedSubmissionForFeedbackTask(studentId, pointName, stageKey, taskId)
     if (!hasResult) {
       return '\u8001\u5e08\u8fd8\u6ca1\u6709\u5b8c\u6210\u6279\u6539\uff0c\u6682\u65f6\u4e0d\u80fd\u5b8c\u6210\u53cd\u9988\u4efb\u52a1'
@@ -476,31 +475,7 @@ function formatSubmission(row = {}) {
   }
 }
 
-function resolveReviewPointStatus(courseStatus = '') {
-  const safeStatus = String(courseStatus || '').trim()
-
-  if (safeStatus === 'completed') return 'completed'
-  if (safeStatus === 'pending' || safeStatus === 'not_started') return 'assigned'
-  if (!safeStatus || safeStatus === 'failed' || safeStatus === 'aborted') return 'locked'
-
-  return 'learning'
-}
-
-function applyReviewPointStatus(statusMap = {}, pointName = '', nextStatus = 'locked') {
-  if (!pointName || !statusMap[pointName]) return
-
-  const currentStatus = statusMap[pointName].status || 'locked'
-  if ((REVIEW_POINT_STATUS_PRIORITY[nextStatus] || 99) < (REVIEW_POINT_STATUS_PRIORITY[currentStatus] || 99)) {
-    statusMap[pointName].status = nextStatus
-  }
-}
-
 async function getReviewPointStatuses(studentId) {
-  const statusMap = REVIEW_POINT_LIST.reduce((result, item) => {
-    result[item.pointName] = { ...item, status: 'locked' }
-    return result
-  }, {})
-
   const [courseRows] = await pool.query(
     `SELECT c.name AS pointName, sc.status
      FROM student_courses sc
@@ -509,35 +484,20 @@ async function getReviewPointStatuses(studentId) {
     [studentId]
   )
 
-  courseRows.forEach((row) => {
-    applyReviewPointStatus(
-      statusMap,
-      normalizeCheckpointName(row.pointName),
-      resolveReviewPointStatus(row.status)
-    )
+  const [learningPathRows] = await pool.query(
+    `SELECT DISTINCT point_name AS pointName
+     FROM student_learning_path_tasks
+     WHERE student_id = ?
+       AND point_name IS NOT NULL
+       AND point_name != ''`,
+    [studentId]
+  )
+
+  return buildReviewPointStatuses({
+    courseRows,
+    learningPathRows,
+    pendingStatus: 'assigned',
   })
-
-  try {
-    const [orderRows] = await pool.query(
-      `SELECT DISTINCT c.name AS pointName
-       FROM orders o
-       JOIN order_items oi ON oi.order_id = o.id
-       JOIN courses c ON c.id = oi.course_id
-       WHERE o.student_id = ?
-         AND o.status = 'paid'`,
-      [studentId]
-    )
-
-    orderRows.forEach((row) => {
-      applyReviewPointStatus(statusMap, normalizeCheckpointName(row.pointName), 'pending')
-    })
-  } catch (error) {
-    if (!isMissingTableError(error)) {
-      throw error
-    }
-  }
-
-  return REVIEW_POINT_LIST.map((item) => statusMap[item.pointName])
 }
 
 async function buildStudentAccessSummary(studentId) {
@@ -704,6 +664,107 @@ function buildAssignedTheoryResourcesForSync(lesson, titlePrefix) {
   return resources
 }
 
+function buildAssignedTheoryStudyPlanDaysForSync(courseName, theoryLessons = []) {
+  const lessons = Array.isArray(theoryLessons) ? theoryLessons : []
+  const days = [
+    {
+      dayNumber: 1,
+      status: 'in_progress',
+      tasks: [
+        {
+          name: '1v1共识课',
+          description: `${courseName} 理论阶段第 1 步：先完成 1v1共识、课后反馈与回顾笔记。`,
+          type: 'review',
+          duration: 15,
+          completed: 0,
+          sortOrder: 0,
+          resources: [],
+        },
+      ],
+    },
+  ]
+
+  lessons.forEach((lesson, index) => {
+    const roundNumber = index + 1
+    const titlePrefix = lesson.title || `${courseName} 第 ${roundNumber} 轮`
+    days.push({
+      dayNumber: days.length + 1,
+      status: 'pending',
+      tasks: [
+        {
+          name: `${titlePrefix} 理论课`,
+          description: `${courseName} 第 ${roundNumber} 轮：课前讲义、理论课、课后作业、视频讲解。`,
+          type: 'video',
+          duration: 45,
+          completed: 0,
+          sortOrder: 0,
+          resources: buildAssignedTheoryResourcesForSync(lesson, titlePrefix),
+        },
+      ],
+    })
+  })
+
+  days.push({
+    dayNumber: days.length + 1,
+    status: 'pending',
+    tasks: [
+      {
+        name: '思维导图与老师点评',
+        description: `${courseName} 理论阶段：上传思维导图并等待老师点评。`,
+        type: 'review',
+        duration: 20,
+        completed: 0,
+        sortOrder: 0,
+        resources: [],
+      },
+    ],
+  })
+
+  days.push({
+    dayNumber: days.length + 1,
+    status: 'pending',
+    tasks: [
+      {
+        name: '1v1纠偏课',
+        description: `${courseName} 理论阶段最后一步：完成 1v1纠偏、回顾笔记、作业上传与批改反馈。`,
+        type: 'review',
+        duration: 45,
+        completed: 0,
+        sortOrder: 0,
+        resources: [],
+      },
+    ],
+  })
+
+  return days
+}
+
+async function resetStudyPlanForSync(studentId, courseId) {
+  await pool.query(
+    `DELETE tr
+     FROM task_resources tr
+     JOIN study_tasks st ON tr.task_id = st.id
+     JOIN study_days sd ON st.study_day_id = sd.id
+     WHERE sd.student_id = ?
+       AND sd.course_id = ?`,
+    [studentId, courseId]
+  )
+
+  await pool.query(
+    `DELETE st
+     FROM study_tasks st
+     JOIN study_days sd ON st.study_day_id = sd.id
+     WHERE sd.student_id = ?
+       AND sd.course_id = ?`,
+    [studentId, courseId]
+  )
+
+  await pool.query(
+    'DELETE FROM study_days WHERE student_id = ? AND course_id = ?',
+    [studentId, courseId]
+  )
+}
+
 async function upsertStudyDayForSync(studentId, courseId, dayNumber, status) {
   await pool.query(
     `INSERT INTO study_days (student_id, course_id, day_number, status)
@@ -762,37 +823,15 @@ async function syncAssignedTheoryLessonsForStudent(studentId, course, assignment
 
   if (!course || !lessons.length) return
 
-  await pool.query(
-    `DELETE tr
-     FROM task_resources tr
-     JOIN study_tasks st ON tr.task_id = st.id
-     JOIN study_days sd ON st.study_day_id = sd.id
-     WHERE sd.student_id = ?
-       AND sd.course_id = ?
-       AND st.type IN ('video', 'review')`,
-    [studentId, course.id]
-  )
+  await resetStudyPlanForSync(studentId, course.id)
 
-  for (let index = 0; index < lessons.length; index += 1) {
-    const lesson = lessons[index]
-    const dayNumber = index + 1
-    const titlePrefix = lesson.title || `${course.name} \u5f55\u64ad\u8bfe${dayNumber}`
-    const studyDay = await upsertStudyDayForSync(
-      studentId,
-      course.id,
-      dayNumber,
-      index === 0 ? 'in_progress' : 'pending'
-    )
-    const studyTask = await upsertStudyTaskForSync(studyDay.id, {
-      name: `${titlePrefix} \u5f55\u64ad\u8bfe`,
-      description: `${course.name} \u7b2c${dayNumber} \u8282\u5f55\u64ad\u8bfe`,
-      type: 'video',
-      duration: 45,
-      completed: 0,
-      sortOrder: 0,
-    })
-
-    await replaceTaskResourcesForSync(studyTask.id, buildAssignedTheoryResourcesForSync(lesson, titlePrefix))
+  const dayPlan = buildAssignedTheoryStudyPlanDaysForSync(course.name, lessons)
+  for (const day of dayPlan) {
+    const studyDay = await upsertStudyDayForSync(studentId, course.id, day.dayNumber, day.status)
+    for (const task of day.tasks) {
+      const studyTask = await upsertStudyTaskForSync(studyDay.id, task)
+      await replaceTaskResourcesForSync(studyTask.id, task.resources || [])
+    }
   }
 }
 
@@ -1704,6 +1743,9 @@ router.get('/review-overview', async (req, res) => {
   const studentId = req.user.id
 
   try {
+    await backfillStudentCoursesFromLearningPath(studentId)
+    await syncAllStudentCourseProgress(studentId)
+
     const [[firstDiagnosis]] = await pool.query(
       `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
        FROM diagnosis_reports

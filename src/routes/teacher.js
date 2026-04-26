@@ -17,6 +17,9 @@ const {
 } = require('../lib/studentFeedback')
 const { normalizeCheckpointName, ALL_CHECKPOINTS } = require('../lib/checkpoint')
 const { UPLOADS_DIR } = require('../lib/uploads')
+const {
+  buildReviewPointStatuses,
+} = require('../lib/reviewPointStatus')
 
 router.use(auth('teacher'))
 
@@ -128,6 +131,107 @@ function buildAssignedTheoryResources(lesson, titlePrefix) {
   return resources
 }
 
+function buildAssignedTheoryStudyPlanDays(courseName, theoryLessons = []) {
+  const lessons = Array.isArray(theoryLessons) ? theoryLessons : []
+  const days = [
+    {
+      dayNumber: 1,
+      status: 'in_progress',
+      tasks: [
+        {
+          name: '1v1共识课',
+          description: `${courseName} 理论阶段第 1 步：先完成 1v1共识、课后反馈与回顾笔记。`,
+          type: 'review',
+          duration: 15,
+          completed: 0,
+          sortOrder: 0,
+          resources: [],
+        },
+      ],
+    },
+  ]
+
+  lessons.forEach((lesson, index) => {
+    const roundNumber = index + 1
+    const titlePrefix = lesson.title || `${courseName} 第 ${roundNumber} 轮`
+    days.push({
+      dayNumber: days.length + 1,
+      status: 'pending',
+      tasks: [
+        {
+          name: `${titlePrefix} 理论课`,
+          description: `${courseName} 第 ${roundNumber} 轮：课前讲义、理论课、课后作业、视频讲解。`,
+          type: 'video',
+          duration: 45,
+          completed: 0,
+          sortOrder: 0,
+          resources: buildAssignedTheoryResources(lesson, titlePrefix),
+        },
+      ],
+    })
+  })
+
+  days.push({
+    dayNumber: days.length + 1,
+    status: 'pending',
+    tasks: [
+      {
+        name: '思维导图与老师点评',
+        description: `${courseName} 理论阶段：上传思维导图并等待老师点评。`,
+        type: 'review',
+        duration: 20,
+        completed: 0,
+        sortOrder: 0,
+        resources: [],
+      },
+    ],
+  })
+
+  days.push({
+    dayNumber: days.length + 1,
+    status: 'pending',
+    tasks: [
+      {
+        name: '1v1纠偏课',
+        description: `${courseName} 理论阶段最后一步：完成 1v1纠偏、回顾笔记、作业上传与批改反馈。`,
+        type: 'review',
+        duration: 45,
+        completed: 0,
+        sortOrder: 0,
+        resources: [],
+      },
+    ],
+  })
+
+  return days
+}
+
+async function resetStudyPlanForCourse(conn, studentId, courseId) {
+  await conn.query(
+    `DELETE tr
+     FROM task_resources tr
+     JOIN study_tasks st ON tr.task_id = st.id
+     JOIN study_days sd ON st.study_day_id = sd.id
+     WHERE sd.student_id = ?
+       AND sd.course_id = ?`,
+    [studentId, courseId],
+  )
+
+  await conn.query(
+    `DELETE st
+     FROM study_tasks st
+     JOIN study_days sd ON st.study_day_id = sd.id
+     WHERE sd.student_id = ?
+       AND sd.course_id = ?`,
+    [studentId, courseId],
+  )
+
+  await conn.query(
+    'DELETE FROM study_days WHERE student_id = ? AND course_id = ?',
+    [studentId, courseId],
+  )
+}
+
 async function upsertStudyDay(conn, studentId, courseId, dayNumber, status) {
   await conn.query(
     `INSERT INTO study_days (student_id, course_id, day_number, status)
@@ -188,38 +292,15 @@ async function syncAssignedTheoryLessonsToStudyPlan(conn, studentId, courseId, c
     return false
   }
 
-  await conn.query(
-    `DELETE tr
-     FROM task_resources tr
-     JOIN study_tasks st ON tr.task_id = st.id
-     JOIN study_days sd ON st.study_day_id = sd.id
-     WHERE sd.student_id = ?
-       AND sd.course_id = ?
-       AND st.type IN ('video', 'review')`,
-    [studentId, courseId],
-  )
+  await resetStudyPlanForCourse(conn, studentId, courseId)
 
-  for (let index = 0; index < lessons.length; index += 1) {
-    const lesson = lessons[index]
-    const dayNumber = index + 1
-    const titlePrefix = lesson.title || `${courseName} 录播课 ${dayNumber}`
-    const studyDay = await upsertStudyDay(
-      conn,
-      studentId,
-      courseId,
-      dayNumber,
-      index === 0 ? 'in_progress' : 'pending',
-    )
-    const studyTask = await upsertStudyTask(conn, studyDay.id, {
-      name: `${titlePrefix} 录播课`,
-      description: `${courseName} 第 ${dayNumber} 节录播课`,
-      type: 'video',
-      duration: 45,
-      completed: 0,
-      sortOrder: 0,
-    })
-
-    await replaceTaskResources(conn, studyTask.id, buildAssignedTheoryResources(lesson, titlePrefix))
+  const dayPlan = buildAssignedTheoryStudyPlanDays(courseName, lessons)
+  for (const day of dayPlan) {
+    const studyDay = await upsertStudyDay(conn, studentId, courseId, day.dayNumber, day.status)
+    for (const task of day.tasks) {
+      const studyTask = await upsertStudyTask(conn, studyDay.id, task)
+      await replaceTaskResources(conn, studyTask.id, task.resources || [])
+    }
   }
 
   return true
@@ -1439,43 +1520,6 @@ function isMissingTableError(error) {
   return error && error.code === 'ER_NO_SUCH_TABLE'
 }
 
-const REVIEW_POINT_LIST = [
-  { id: 1, pointName: '\u8981\u70b9\u4e0d\u5168\u4e0d\u51c6' },
-  { id: 2, pointName: '\u63d0\u70bc\u8f6c\u8ff0\u56f0\u96be' },
-  { id: 3, pointName: '\u5206\u6790\u7ed3\u6784\u4e0d\u6e05' },
-  { id: 4, pointName: '\u516c\u6587\u7ed3\u6784\u4e0d\u6e05' },
-  { id: 5, pointName: '\u5bf9\u7b56\u63a8\u5bfc\u56f0\u96be' },
-  { id: 6, pointName: '\u4f5c\u6587\u7acb\u610f\u4e0d\u51c6' },
-  { id: 7, pointName: '\u4f5c\u6587\u8bba\u8bc1\u4e0d\u6e05' },
-  { id: 8, pointName: '\u4f5c\u6587\u8868\u8fbe\u4e0d\u7545' },
-]
-
-const REVIEW_POINT_STATUS_PRIORITY = {
-  learning: 0,
-  completed: 1,
-  pending: 2,
-  locked: 3,
-}
-
-function resolveReviewPointStatus(courseStatus = '') {
-  const safeStatus = String(courseStatus || '').trim()
-
-  if (safeStatus === 'completed') return 'completed'
-  if (safeStatus === 'pending' || safeStatus === 'not_started') return 'pending'
-  if (!safeStatus || safeStatus === 'failed' || safeStatus === 'aborted') return 'locked'
-
-  return 'learning'
-}
-
-function applyReviewPointStatus(statusMap = {}, pointName = '', nextStatus = 'locked') {
-  if (!pointName || !statusMap[pointName]) return
-
-  const currentStatus = statusMap[pointName].status || 'locked'
-  if ((REVIEW_POINT_STATUS_PRIORITY[nextStatus] || 99) < (REVIEW_POINT_STATUS_PRIORITY[currentStatus] || 99)) {
-    statusMap[pointName].status = nextStatus
-  }
-}
-
 function mergeLearningPathMeta(previousMeta = {}, patch = {}) {
   const nextMeta = {
     ...previousMeta,
@@ -1518,11 +1562,6 @@ function mergeLearningPathMeta(previousMeta = {}, patch = {}) {
 }
 
 async function getReviewPointStatusesForStudent(studentId) {
-  const statusMap = REVIEW_POINT_LIST.reduce((result, item) => {
-    result[item.pointName] = { ...item, status: 'locked' }
-    return result
-  }, {})
-
   const [courseRows] = await pool.query(
     `SELECT c.name AS pointName, sc.status
      FROM student_courses sc
@@ -1531,40 +1570,24 @@ async function getReviewPointStatusesForStudent(studentId) {
     [studentId]
   )
 
-  courseRows.forEach((row) => {
-    applyReviewPointStatus(
-      statusMap,
-      normalizeCheckpointName(row.pointName),
-      resolveReviewPointStatus(row.status)
-    )
-  })
+  const [learningPathRows] = await pool.query(
+    `SELECT DISTINCT point_name AS pointName
+     FROM student_learning_path_tasks
+     WHERE student_id = ?
+       AND point_name IS NOT NULL
+       AND point_name != ''`,
+    [studentId]
+  )
 
-  try {
-    const [orderRows] = await pool.query(
-      `SELECT DISTINCT c.name AS pointName
-       FROM orders o
-       JOIN order_items oi ON oi.order_id = o.id
-       JOIN courses c ON c.id = oi.course_id
-       WHERE o.student_id = ?
-         AND o.status = 'paid'`,
-      [studentId]
-    )
-
-    orderRows.forEach((row) => {
-      applyReviewPointStatus(statusMap, normalizeCheckpointName(row.pointName), 'pending')
-    })
-  } catch (error) {
-    if (!isMissingTableError(error)) throw error
-  }
-
-  return REVIEW_POINT_LIST.map((item) => {
-    const entry = statusMap[item.pointName]
-    return {
-      pointId: entry.id,
-      pointName: entry.pointName,
-      status: entry.status,
-    }
-  })
+  return buildReviewPointStatuses({
+    courseRows,
+    learningPathRows,
+    pendingStatus: 'pending',
+  }).map((entry) => ({
+    pointId: entry.id,
+    pointName: entry.pointName,
+    status: entry.status,
+  }))
 }
 
 function getStartOfLocalDay(date = new Date()) {
@@ -2055,6 +2078,8 @@ async function getPointLearningSummary(studentId, pointName) {
 }
 
 async function getReviewOverviewForStudent(studentId) {
+  await syncAllStudentCourseProgress(pool, studentId)
+
   const [[firstDiagnosis]] = await pool.query(
     `SELECT id, target_exam AS targetExam, diagnosis_score, target_score, diagnosis_date, created_at
      FROM diagnosis_reports
@@ -2916,7 +2941,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
       `DELETE FROM student_learning_path_tasks
        WHERE student_id = ?
          AND point_name = ?
-         AND stage_key IN ('theory', 'theory_config', 'training', 'exam', 'report')`,
+         AND stage_key IN ('theory', 'theory_config', 'training', 'exam', 'report', 'drill')`,
       [studentId, checkpointName],
     )
 

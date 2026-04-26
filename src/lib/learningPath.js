@@ -39,13 +39,14 @@ function getTheoryConfigPayload(stateRows = []) {
 
 function buildDynamicTheoryDefinition(stateRows = []) {
   const payload = getTheoryConfigPayload(stateRows)
+  const hasTheoryConfig = payload && Object.keys(payload).length > 0
   const theoryLessons = Array.isArray(payload.theoryLessons)
     ? payload.theoryLessons
       .map((lesson) => normalizeTheoryLesson(lesson))
-      .filter((lesson) => lesson.id || lesson.title || lesson.videoId || lesson.preClassUrl || lesson.analysisUrl)
+      .filter((lesson) => lesson.videoId || lesson.preClassUrl || lesson.analysisUrl)
     : []
 
-  if (!theoryLessons.length) {
+  if (!hasTheoryConfig) {
     return null
   }
 
@@ -161,7 +162,9 @@ function buildDynamicTheoryDefinition(stateRows = []) {
 
   return {
     ...STAGE_DEFINITIONS.theory,
-    stageSubtitle: `按"1v1共识—理论课（${theoryLessons.length}轮）—思维导图—1v1纠偏"顺序完成理论阶段学习。`,
+    stageSubtitle: theoryLessons.length > 0
+      ? `按"1v1共识—理论课（${theoryLessons.length}轮）—思维导图—1v1纠偏"顺序完成理论阶段学习。`
+      : '按"1v1共识—思维导图—1v1纠偏"顺序完成理论阶段学习。',
     groups,
   }
 }
@@ -533,13 +536,14 @@ function buildDynamicTrainingStage(stateRows = []) {
 
   if (!practiceItems.length) return null
 
-  const roundItems = practiceItems.flatMap((practiceItem, index) => (
-    buildTrainingRound(index + 1, practiceItem)
+  const fixedRounds = [1, 2, 3]
+  const roundItems = fixedRounds.flatMap((roundNumber) => (
+    buildTrainingRound(roundNumber, practiceItems[roundNumber - 1] || null)
   ))
 
   return {
     ...STAGE_DEFINITIONS.training,
-    stageSubtitle: `按 ${practiceItems.length} 轮完成”题目、录播课、上传作业、批改反馈、刷题解析、学生心得体会、批改反馈”的实训闭环。`,
+    stageSubtitle: '按 3 轮完成“题目、录播课、上传作业、批改反馈、刷题解析、学生心得体会、批改反馈”的实训闭环。',
     groups: [
       {
         title: '实训路径',
@@ -573,7 +577,7 @@ const STAGE_DEFINITIONS = {
     stageKey: 'diagnose',
     stageIndex: '1 / 6',
     stageName: '诊断',
-        stageSubtitle: '??????????????????????????????????1v1???????????????',
+    stageSubtitle: '按顺序完成诊断群、电话沟通、诊断试卷、上传试卷、听解析课、批改反馈、1v1诊断、课后反馈、去回顾、课后讲义和报告。',
     sectionTitle: '诊断路径',
     groups: [
       {
@@ -586,8 +590,9 @@ const STAGE_DEFINITIONS = {
           { id: 'diagnose_analysis_video', title: '听解析课', desc: '查看解析课内容，了解本卡点常见失分原因。', actionText: '去学习', actionType: 'video' },
           { id: 'diagnose_paper_feedback', title: '批改反馈', desc: '查看老师基于试卷给出的批改反馈 PDF。', actionText: '查看反馈', actionType: 'feedback' },
           { id: 'diagnose_live', title: '1v1诊断：去上课', desc: '进入 1v1 诊断直播课链接。', actionText: '去上课', actionType: 'live' },
-          { id: 'diagnose_feedback', title: '课后反馈', desc: '查看老师给你的本次诊断反馈。', actionText: '查看反馈', actionType: 'feedback' },
+          { id: 'diagnose_feedback', title: '课后反馈', desc: '完成课后反馈问卷，帮助老师了解本次诊断课的学习情况。', actionText: '填写反馈', actionType: 'feedback' },
           { id: 'diagnose_replay', title: '去回顾', desc: '查看直播课回放链接。', actionText: '去回顾', actionType: 'replay' },
+          { id: 'diagnose_handout', title: '课后讲义', desc: '查看本次诊断课课后讲义 PDF。', actionText: '查看讲义', actionType: 'document' },
           { id: 'diagnose_report', title: '报告', desc: '查看诊断报告和后续学习建议。', actionText: '查看报告', actionType: 'report' },
         ],
       },
