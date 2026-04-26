@@ -27,6 +27,9 @@ const { UPLOADS_DIR } = require('../lib/uploads')
 const {
   buildReviewPointStatuses,
 } = require('../lib/reviewPointStatus')
+const {
+  rebalanceStudentCourseStatuses,
+} = require('../lib/studentCourseStatus')
 
 router.use(auth('student'))
 
@@ -267,21 +270,7 @@ async function syncStudentCourseProgress(studentId, pointName, executor = pool) 
     [summary.progressPercent, courseStatus, studentId, course.id]
   )
 
-  if (courseStatus === 'completed') {
-    const [[nextCourse]] = await executor.query(
-      `SELECT id FROM student_courses
-       WHERE student_id = ? AND status = 'pending'
-       ORDER BY sort_order ASC, id ASC
-       LIMIT 1`,
-      [studentId]
-    )
-    if (nextCourse) {
-      await executor.query(
-        `UPDATE student_courses SET status = 'in_progress' WHERE id = ?`,
-        [nextCourse.id]
-      )
-    }
-  }
+  await rebalanceStudentCourseStatuses(executor, studentId)
 
   return {
     progress: summary.progressPercent,
@@ -302,6 +291,8 @@ async function syncAllStudentCourseProgress(studentId, executor = pool) {
   for (const row of rows) {
     await syncStudentCourseProgress(studentId, row.point_name, executor)
   }
+
+  await rebalanceStudentCourseStatuses(executor, studentId)
 }
 
 async function saveLearningPathTask({
@@ -315,59 +306,77 @@ async function saveLearningPathTask({
   actorId,
 }) {
   const safePointName = normalizeCheckpointName(pointName)
-  const [[existingRow]] = await pool.query(
-    `SELECT id, meta_json, is_done
-     FROM student_learning_path_tasks
-     WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
-     LIMIT 1`,
-    [studentId, safePointName, stageKey, taskId]
-  )
+  let lastError = null
 
-  let mergedMeta = mergeLearningPathMeta({}, metaPatch)
-  if (existingRow && existingRow.meta_json) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const parsedMeta = JSON.parse(existingRow.meta_json)
-      mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
-    } catch {
-      mergedMeta = mergeLearningPathMeta({}, metaPatch)
+      const [[existingRow]] = await pool.query(
+        `SELECT id, meta_json, is_done
+         FROM student_learning_path_tasks
+         WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
+         LIMIT 1`,
+        [studentId, safePointName, stageKey, taskId]
+      )
+
+      let mergedMeta = mergeLearningPathMeta({}, metaPatch)
+      if (existingRow && existingRow.meta_json) {
+        try {
+          const parsedMeta = JSON.parse(existingRow.meta_json)
+          mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
+        } catch {
+          mergedMeta = mergeLearningPathMeta({}, metaPatch)
+        }
+      }
+
+      const nextDone = status === 'pending' || status === 'current'
+        ? 0
+        : 1
+
+      await pool.query(
+        `INSERT INTO student_learning_path_tasks (
+           student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           is_done = VALUES(is_done),
+           meta_json = VALUES(meta_json),
+           updated_by_role = VALUES(updated_by_role),
+           updated_by_id = VALUES(updated_by_id),
+           updated_at = NOW()`,
+        [
+          studentId,
+          safePointName,
+          stageKey,
+          taskId,
+          nextDone,
+          JSON.stringify(mergedMeta),
+          actorRole,
+          actorId,
+        ]
+      )
+
+      await syncStudentCourseProgress(studentId, safePointName)
+
+      return {
+        pointName: safePointName,
+        taskId,
+        stageKey,
+        status: nextDone ? 'done' : 'pending',
+        updatedAt: new Date().toISOString(),
+      }
+    } catch (error) {
+      lastError = error
+      const retryable = error && (
+        error.code === 'ER_LOCK_WAIT_TIMEOUT'
+        || error.code === 'ER_LOCK_DEADLOCK'
+        || error.errno === 1205
+        || error.errno === 1213
+      )
+      if (!retryable || attempt >= 2) throw error
+      await new Promise((resolve) => setTimeout(resolve, 80 * (attempt + 1)))
     }
   }
 
-  const nextDone = status === 'pending' || status === 'current'
-    ? 0
-    : 1
-
-  await pool.query(
-    `INSERT INTO student_learning_path_tasks (
-       student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       is_done = VALUES(is_done),
-       meta_json = VALUES(meta_json),
-       updated_by_role = VALUES(updated_by_role),
-       updated_by_id = VALUES(updated_by_id),
-       updated_at = NOW()`,
-    [
-      studentId,
-      safePointName,
-      stageKey,
-      taskId,
-      nextDone,
-      JSON.stringify(mergedMeta),
-      actorRole,
-      actorId,
-    ]
-  )
-
-  await syncStudentCourseProgress(studentId, safePointName)
-
-  return {
-    pointName: safePointName,
-    taskId,
-    stageKey,
-    status: nextDone ? 'done' : 'pending',
-    updatedAt: new Date().toISOString(),
-  }
+  throw lastError
 }
 
 async function getDoneLearningPathTaskIds(studentId, pointName, stageKey) {
@@ -842,25 +851,53 @@ async function backfillStudentCoursesFromLearningPath(studentId) {
      WHERE student_id = ?
        AND stage_key = 'theory_config'
        AND task_id = 'assignment_config'
-      ORDER BY assigned_at DESC, point_name ASC`,
+      ORDER BY assigned_at ASC, point_name ASC`,
     [studentId]
   )
 
-  for (const row of assignmentRows) {
+  const normalizedRows = assignmentRows
+    .map((row, index) => {
+      const meta = readMeta(row.meta_json)
+      const rawSortOrder = Number(meta && meta.sortOrder)
+      return {
+        ...row,
+        meta,
+        sortOrder: Number.isFinite(rawSortOrder) && rawSortOrder >= 0 ? rawSortOrder : index,
+      }
+    })
+    .sort((left, right) => {
+      const orderDiff = Number(left.sortOrder || 0) - Number(right.sortOrder || 0)
+      if (orderDiff !== 0) return orderDiff
+
+      const leftTime = left.assigned_at ? new Date(left.assigned_at).getTime() : 0
+      const rightTime = right.assigned_at ? new Date(right.assigned_at).getTime() : 0
+      if (leftTime !== rightTime) return leftTime - rightTime
+
+      return String(left.point_name || '').localeCompare(String(right.point_name || ''))
+    })
+
+  for (let index = 0; index < normalizedRows.length; index += 1) {
+    const row = normalizedRows[index]
     const course = await findOrCreateCourseForSync(row.point_name)
     if (!course) continue
 
+    const safeSortOrder = Number.isFinite(Number(row.sortOrder)) ? Number(row.sortOrder) : index
+    const initialStatus = safeSortOrder === 0 ? 'in_progress' : 'pending'
+
     await pool.query(
-      `INSERT INTO student_courses (student_id, course_id, progress, status, created_at)
-       VALUES (?, ?, 0, 'in_progress', COALESCE(?, NOW()))
+      `INSERT INTO student_courses (student_id, course_id, progress, status, sort_order, created_at)
+       VALUES (?, ?, 0, ?, ?, COALESCE(?, NOW()))
        ON DUPLICATE KEY UPDATE
+          sort_order = VALUES(sort_order),
           student_id = VALUES(student_id)`,
-      [studentId, course.id, row.assigned_at || null]
+      [studentId, course.id, initialStatus, safeSortOrder, row.assigned_at || null]
     )
 
-    await syncAssignedTheoryLessonsForStudent(studentId, course, readMeta(row.meta_json))
+    await syncAssignedTheoryLessonsForStudent(studentId, course, row.meta)
     await syncStudentCourseProgress(studentId, row.point_name)
   }
+
+  await rebalanceStudentCourseStatuses(pool, studentId)
 }
 
 function getStartOfDay(date = new Date()) {
@@ -1599,20 +1636,20 @@ router.get('/profile', async (req, res) => {
     )
 
     const [inProgress] = await pool.query(
-      `SELECT sc.id, sc.course_id AS course_id, c.name, c.subject, sc.progress, sc.status
+      `SELECT sc.id, sc.course_id AS course_id, c.name, c.subject, sc.progress, sc.status, sc.sort_order AS sortOrder
        FROM student_courses sc
        JOIN courses c ON sc.course_id = c.id
        WHERE sc.student_id = ? AND sc.status != 'completed'
-       ORDER BY sc.created_at DESC, sc.id DESC`,
+       ORDER BY sc.sort_order ASC, sc.id ASC`,
       [studentId]
     )
 
     const [completed] = await pool.query(
-      `SELECT sc.id, sc.course_id AS course_id, c.name, c.subject, sc.progress, sc.status
+      `SELECT sc.id, sc.course_id AS course_id, c.name, c.subject, sc.progress, sc.status, sc.sort_order AS sortOrder
        FROM student_courses sc
        JOIN courses c ON sc.course_id = c.id
        WHERE sc.student_id = ? AND sc.status = 'completed'
-       ORDER BY sc.created_at ASC, sc.id ASC`,
+       ORDER BY sc.sort_order ASC, sc.id ASC`,
       [studentId]
     )
 

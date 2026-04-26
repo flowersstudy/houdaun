@@ -70,6 +70,37 @@ function removeStoredFile(filename = '') {
   }
 }
 
+function shouldRetryDbError(error) {
+  return !!error && (
+    error.code === 'ER_LOCK_WAIT_TIMEOUT'
+    || error.code === 'ER_LOCK_DEADLOCK'
+    || error.errno === 1205
+    || error.errno === 1213
+  )
+}
+
+function wait(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function withDbRetry(task, attempts = 3) {
+  let lastError = null
+
+  for (let index = 0; index < attempts; index += 1) {
+    try {
+      return await task()
+    } catch (error) {
+      lastError = error
+      if (!shouldRetryDbError(error) || index >= attempts - 1) {
+        throw error
+      }
+      await wait(80 * (index + 1))
+    }
+  }
+
+  throw lastError
+}
+
 async function upsertLearningPathTaskMeta({
   studentId,
   pointName,
@@ -83,50 +114,52 @@ async function upsertLearningPathTaskMeta({
 }) {
   if (!studentId || !pointName || !stageKey || !taskId) return null
 
-  const [[existingRow]] = await pool.query(
-    `SELECT meta_json
-     FROM student_learning_path_tasks
-     WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
-     LIMIT 1`,
-    [studentId, pointName, stageKey, taskId]
-  )
-  const currentMeta = readMeta(existingRow && existingRow.meta_json)
-  const nextMeta = {
-    ...currentMeta,
-    ...cleanMetaPatch(metaPatch),
-  }
+  return withDbRetry(async () => {
+    const [[existingRow]] = await pool.query(
+      `SELECT meta_json
+       FROM student_learning_path_tasks
+       WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
+       LIMIT 1`,
+      [studentId, pointName, stageKey, taskId]
+    )
+    const currentMeta = readMeta(existingRow && existingRow.meta_json)
+    const nextMeta = {
+      ...currentMeta,
+      ...cleanMetaPatch(metaPatch),
+    }
 
-  if (appendUpload) {
-    nextMeta.uploads = [
-      ...(Array.isArray(currentMeta.uploads) ? currentMeta.uploads : []),
-      appendUpload,
-    ]
-    nextMeta.uploadCount = nextMeta.uploads.length
-  }
+    if (appendUpload) {
+      nextMeta.uploads = [
+        ...(Array.isArray(currentMeta.uploads) ? currentMeta.uploads : []),
+        appendUpload,
+      ]
+      nextMeta.uploadCount = nextMeta.uploads.length
+    }
 
-  await pool.query(
-    `INSERT INTO student_learning_path_tasks (
-       student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       is_done = VALUES(is_done),
-       meta_json = VALUES(meta_json),
-       updated_by_role = VALUES(updated_by_role),
-       updated_by_id = VALUES(updated_by_id),
-       updated_at = NOW()`,
-    [
-      studentId,
-      pointName,
-      stageKey,
-      taskId,
-      isDone ? 1 : 0,
-      JSON.stringify(nextMeta),
-      actorRole,
-      actorId,
-    ]
-  )
+    await pool.query(
+      `INSERT INTO student_learning_path_tasks (
+         student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE
+         is_done = VALUES(is_done),
+         meta_json = VALUES(meta_json),
+         updated_by_role = VALUES(updated_by_role),
+         updated_by_id = VALUES(updated_by_id),
+         updated_at = NOW()`,
+      [
+        studentId,
+        pointName,
+        stageKey,
+        taskId,
+        isDone ? 1 : 0,
+        JSON.stringify(nextMeta),
+        actorRole,
+        actorId,
+      ]
+    )
 
-  return nextMeta
+    return nextMeta
+  })
 }
 
 async function getDoneLearningPathTaskIds(studentId, pointName, stageKey) {
@@ -284,7 +317,7 @@ router.get('/', auth('teacher'), async (req, res) => {
   try {
     const [rows] = await pool.query(
       `SELECT ps.id, ps.student_id, ps.student_name, ps.review_type, ps.checkpoint, ps.deadline, ps.priority,
-              ps.submitted_normal, ps.file_name,
+              ps.submitted_normal, ps.file_name, ps.point_name, ps.stage_key, ps.task_id,
               DATE_FORMAT(ps.created_at,'%m-%d %H:%i') AS submitted_at
        FROM pdf_submissions ps
        JOIN teacher_students ts ON ts.student_id = ps.student_id

@@ -20,6 +20,9 @@ const { UPLOADS_DIR } = require('../lib/uploads')
 const {
   buildReviewPointStatuses,
 } = require('../lib/reviewPointStatus')
+const {
+  rebalanceStudentCourseStatuses,
+} = require('../lib/studentCourseStatus')
 
 router.use(auth('teacher'))
 
@@ -1881,6 +1884,8 @@ async function syncStudentCourseProgress(executor, studentId, pointName) {
     [summary.progressPercent, courseStatus, studentId, course.id]
   )
 
+  await rebalanceStudentCourseStatuses(executor, studentId)
+
   return {
     progress: summary.progressPercent,
     status: courseStatus,
@@ -1900,6 +1905,8 @@ async function syncAllStudentCourseProgress(executor, studentId) {
   for (const row of rows) {
     await syncStudentCourseProgress(executor, studentId, row.point_name)
   }
+
+  await rebalanceStudentCourseStatuses(executor, studentId)
 }
 
 async function saveLearningPathTask({
@@ -1914,59 +1921,77 @@ async function saveLearningPathTask({
   executor = pool,
 }) {
   const safePointName = normalizeCheckpointName(pointName)
-  const [[existingRow]] = await executor.query(
-    `SELECT id, meta_json
-     FROM student_learning_path_tasks
-     WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
-     LIMIT 1`,
-    [studentId, safePointName, stageKey, taskId]
-  )
+  let lastError = null
 
-  let mergedMeta = mergeLearningPathMeta({}, metaPatch)
-  if (existingRow && existingRow.meta_json) {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      const parsedMeta = JSON.parse(existingRow.meta_json)
-      mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
-    } catch {
-      mergedMeta = mergeLearningPathMeta({}, metaPatch)
+      const [[existingRow]] = await executor.query(
+        `SELECT id, meta_json
+         FROM student_learning_path_tasks
+         WHERE student_id = ? AND point_name = ? AND stage_key = ? AND task_id = ?
+         LIMIT 1`,
+        [studentId, safePointName, stageKey, taskId]
+      )
+
+      let mergedMeta = mergeLearningPathMeta({}, metaPatch)
+      if (existingRow && existingRow.meta_json) {
+        try {
+          const parsedMeta = JSON.parse(existingRow.meta_json)
+          mergedMeta = mergeLearningPathMeta(parsedMeta && typeof parsedMeta === 'object' ? parsedMeta : {}, metaPatch)
+        } catch {
+          mergedMeta = mergeLearningPathMeta({}, metaPatch)
+        }
+      }
+
+      const nextDone = status === 'pending' || status === 'current'
+        ? 0
+        : 1
+
+      await executor.query(
+        `INSERT INTO student_learning_path_tasks (
+           student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE
+           is_done = VALUES(is_done),
+           meta_json = VALUES(meta_json),
+           updated_by_role = VALUES(updated_by_role),
+           updated_by_id = VALUES(updated_by_id),
+           updated_at = NOW()`,
+        [
+          studentId,
+          safePointName,
+          stageKey,
+          taskId,
+          nextDone,
+          JSON.stringify(mergedMeta),
+          actorRole,
+          actorId,
+        ]
+      )
+
+      await syncStudentCourseProgress(executor, studentId, safePointName)
+
+      return {
+        pointName: safePointName,
+        taskId,
+        stageKey,
+        status: nextDone ? 'done' : 'pending',
+        updatedAt: new Date().toISOString(),
+      }
+    } catch (error) {
+      lastError = error
+      const retryable = error && (
+        error.code === 'ER_LOCK_WAIT_TIMEOUT'
+        || error.code === 'ER_LOCK_DEADLOCK'
+        || error.errno === 1205
+        || error.errno === 1213
+      )
+      if (!retryable || attempt >= 2) throw error
+      await new Promise((resolve) => setTimeout(resolve, 80 * (attempt + 1)))
     }
   }
 
-  const nextDone = status === 'pending' || status === 'current'
-    ? 0
-    : 1
-
-  await executor.query(
-    `INSERT INTO student_learning_path_tasks (
-       student_id, point_name, stage_key, task_id, is_done, meta_json, updated_by_role, updated_by_id
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-     ON DUPLICATE KEY UPDATE
-       is_done = VALUES(is_done),
-       meta_json = VALUES(meta_json),
-       updated_by_role = VALUES(updated_by_role),
-       updated_by_id = VALUES(updated_by_id),
-       updated_at = NOW()`,
-    [
-      studentId,
-      safePointName,
-      stageKey,
-      taskId,
-      nextDone,
-      JSON.stringify(mergedMeta),
-      actorRole,
-      actorId,
-    ]
-  )
-
-  await syncStudentCourseProgress(executor, studentId, safePointName)
-
-  return {
-    pointName: safePointName,
-    taskId,
-    stageKey,
-    status: nextDone ? 'done' : 'pending',
-    updatedAt: new Date().toISOString(),
-  }
+  throw lastError
 }
 
 async function getPointLearningSummary(studentId, pointName) {
@@ -2440,9 +2465,10 @@ router.get('/students/:studentId/info', async (req, res) => {
       [teacherId, studentId]
     )
     const [courses] = await pool.query(
-      `SELECT sc.id, c.name, c.subject, sc.progress, sc.status
+      `SELECT sc.id, c.name, c.subject, sc.progress, sc.status, sc.sort_order AS sortOrder
        FROM student_courses sc JOIN courses c ON sc.course_id = c.id
-       WHERE sc.student_id = ?`,
+       WHERE sc.student_id = ?
+       ORDER BY sc.sort_order ASC, sc.id ASC`,
       [studentId]
     )
     const [[sessionStats]] = await pool.query(
@@ -2908,6 +2934,7 @@ router.post('/practice-assignment-tasks/:taskId/assign', async (req, res) => {
 
     const assignmentPayload = {
       checkpointName,
+      sortOrder,
       version,
       versionName,
       province,
